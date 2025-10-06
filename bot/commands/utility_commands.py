@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 from typing import Optional
 
-from config import GUILD_ID, AUTO_SAVE_INTERVAL_MINUTES
+from config import GUILD_ID, AUTO_SAVE_INTERVAL_MINUTES, QB_HOST, QB_USER, QB_PASS, DOWNLOAD_PATH
 
 from services.plex_service import PlexService
 # Import qBittorrent for fetch and status commands
@@ -39,9 +39,10 @@ class UtilityCommands(commands.Cog):
         self.qb = None
         if QB_AVAILABLE:
             try:
-                self.qb = qbittorrentapi.Client(host='localhost:8080', username='admin', password='adminpass')
+                self.qb = qbittorrentapi.Client(host=QB_HOST, username=QB_USER, password=QB_PASS)
                 self.qb.auth_log_in()
-            except Exception:
+            except Exception as e:
+                print(f"qBittorrent connection failed: {e}")
                 pass  # qBittorrent not available
 
     @commands.command(name="fetch")
@@ -51,20 +52,22 @@ class UtilityCommands(commands.Cog):
             await ctx.send("❌ qBittorrent is not available or not configured.")
             return
         
-        custom_path = r"P:\Movies"  # Set the download location
-        
         try:
-            # Add the torrent with the custom save path
-            self.qb.torrents_add(urls=magnet_link, save_path=custom_path)
-            await ctx.send(f"🎬 Magnet added to qBittorrent successfully!\n📂 Saved to: {custom_path}")
+            # Add the torrent with the custom save path from config
+            self.qb.torrents_add(urls=magnet_link, save_path=DOWNLOAD_PATH)
+            await ctx.send(f"🎬 Magnet added to qBittorrent successfully!\n📂 Saved to: {DOWNLOAD_PATH}")
         except Exception as e:
             await ctx.send(f"❌ Failed to add magnet: {e}")
 
     @commands.command(name="status")
     async def download_status(self, ctx: commands.Context):
         """Show status of active qBittorrent downloads."""
+        if not QB_AVAILABLE:
+            await ctx.send("❌ qBittorrent API library not installed. Run: `pip install qbittorrent-api`")
+            return
+            
         if not self.qb:
-            await ctx.send("❌ qBittorrent is not available or not configured.")
+            await ctx.send(f"❌ qBittorrent connection failed. Check if qBittorrent is running at {QB_HOST} with Web UI enabled.")
             return
         
         try:
