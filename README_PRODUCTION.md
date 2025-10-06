@@ -33,6 +33,39 @@ A sophisticated Discord bot for managing horror movie marathons with Plex integr
 - Timestamp-based AI summaries
 - qBittorrent integration for downloads
 
+## ⚠️ Important Disclaimers
+
+### 🎥 Discord Streaming Compliance
+**This bot does NOT stream content directly.** To comply with Discord's Terms of Service:
+- The bot **controls** a Discord user account that manually streams via screen share
+- **You** are responsible for manually starting Discord streaming
+- The bot only **coordinates** and **monitors** what you're already streaming
+- All content streaming is done through **your** Discord account, not the bot
+
+### 🖥️ Supported Plex Clients
+The bot **only works with specific Plex clients** that support proper session reporting:
+- ✅ **Plex Media Player** (Desktop)
+- ✅ **Roku** Plex app
+- ✅ **Apple TV** Plex app
+- ✅ **Smart TV** apps (Samsung, LG, etc.)
+- ❌ **Web Player** (limited session data)
+- ❌ **Mobile apps** (inconsistent reporting)
+
+### 🎬 Discord Streaming Setup
+For Discord streaming compatibility, you need **Plex Media Player**:
+1. **Download older installer**: [Plex Media Player v2.58.0](https://downloads.plex.tv/plexmediaplayer/) (or compatible version)
+2. **Install on streaming computer**
+3. **Configure for fullscreen playback**
+4. **Use Discord screen share** to stream to your server
+
+### 🚨 Torrent Security Warning
+**The `!fetch` command has NO input sanitization:**
+- ⚠️ **Only provide access to trusted users**
+- ⚠️ **Malicious magnets can download malware**
+- ⚠️ **No content filtering** (could download inappropriate material)
+- ⚠️ **Downloads directly to your system**
+- 🔒 **Consider disabling if unsure** (comment out in utility_commands.py)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -190,7 +223,7 @@ clankerTV/
 - `!stats [user]` - View user statistics
 - `!badges [user]` - View earned badges
 - `!help` - Show command help
-- `!fetch <magnet>` - Download torrent (if configured)
+- `!fetch <magnet>` - Download torrent ⚠️ **TRUSTED USERS ONLY**
 - `!status` - Show bot/service status
 
 ### Playback Commands
@@ -198,12 +231,31 @@ clankerTV/
 - `!skip` - Skip current movie (admin only)
 - `!pause` / `!resume` - Playback control
 
-## 🛡️ Security Notes
+## 🛡️ Security & Compliance Notes
 
+### 🔐 Configuration Security
 - **Never commit** `.env` files or `config.py` with real tokens
 - Use environment variables for all sensitive data
 - The bot includes config validation to prevent startup with placeholder values
 - Consider using Discord's slash commands for improved security
+
+### 🚨 Torrent Safety Warning
+- **`!fetch` command is UNSANITIZED** - only give access to trusted users
+- **No malware protection** - malicious magnets can harm your system
+- **No content filtering** - inappropriate material could be downloaded
+- **Recommended**: Disable torrent features for public bots
+
+### ⚖️ Legal & ToS Compliance
+- **Bot does not stream content** - only coordinates manual Discord streaming
+- **You are responsible** for all streamed content and copyright compliance
+- **Discord ToS compliance** - streaming is done via your user account, not the bot
+- **Content responsibility** - ensure you have rights to stream any content
+
+### 🔒 Access Control Recommendations
+- Use **private Discord server** for movie nights with trusted friends
+- **Restrict bot permissions** to necessary channels only
+- **Monitor command usage** - check logs for suspicious activity
+- **Regular security updates** - keep dependencies updated
 
 ## 🤝 Contributing
 
