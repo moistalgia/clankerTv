@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+
+# Backup files with sensitive data
+config_original_backup.py
+*_backup.py
+
+# Data files (may contain personal info)
+data/
+*.json
+!horror_bingo_data.json  # This one seems safe to include
+
+# Backup files
+*_backup_*.json
+*.bak
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cache
+.cache/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation build
+docs/_build/
+
+# JetBrains
+.idea/
+
+# VS Code
+.vscode/
