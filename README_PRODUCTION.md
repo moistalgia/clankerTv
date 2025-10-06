@@ -45,8 +45,8 @@ A sophisticated Discord bot for managing horror movie marathons with Plex integr
 
 1. **Clone the repository**
    ```bash
-   git clone <repository-url>
-   cd clankerTV
+   git clone https://github.com/moistalgia/clankerTv.git
+   cd clankerTv
    ```
 
 2. **Set up virtual environment**
@@ -64,12 +64,22 @@ A sophisticated Discord bot for managing horror movie marathons with Plex integr
 
 4. **Configure environment**
    ```bash
+   # Windows
+   copy .env.example .env
+   # Linux/Mac
    cp .env.example .env
-   # Edit .env with your actual values
+   
+   # Edit .env with your actual values using any text editor
    ```
 
 5. **Run the bot**
    ```bash
+   python main.py
+   ```
+   
+   **Note:** If running without virtual environment, you may need:
+   ```bash
+   pip install python-dotenv
    python main.py
    ```
 

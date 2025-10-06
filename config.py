@@ -84,9 +84,26 @@ DEFAULT_SLIDERS: Dict[str, int] = {
 }
 
 # ========================================
+# UI CONFIGURATION
+# ========================================
+
+MOVIES_PER_PAGE = int(os.getenv("MOVIES_PER_PAGE", "25"))  # Number of movies per page in ListView
+
+# ========================================
 # TASK INTERVALS
 # ========================================
 
+# Background task intervals
+PLAYLIST_REFRESH_INTERVAL_HOURS = int(os.getenv("PLAYLIST_REFRESH_INTERVAL_HOURS", "1"))  # How often to refresh Plex playlist
+PLAYBACK_CHECK_INTERVAL_MINUTES = int(os.getenv("PLAYBACK_CHECK_INTERVAL_MINUTES", "1"))  # How often to check playback status
+SPONTANEOUS_AI_INTERVAL_MINUTES = int(os.getenv("SPONTANEOUS_AI_INTERVAL_MINUTES", "10"))  # How often AI might post random messages
+AUTO_SAVE_INTERVAL_MINUTES = int(os.getenv("AUTO_SAVE_INTERVAL_MINUTES", "1"))  # How often to auto-save badge data during active sessions
+
+# Message behavior
+RANDOM_RESPONSE_CHANCE = float(os.getenv("RANDOM_RESPONSE_CHANCE", "0.2"))  # 20% chance to respond to messages
+SPONTANEOUS_MESSAGE_CHANCE = float(os.getenv("SPONTANEOUS_MESSAGE_CHANCE", "0.2"))  # 20% chance to post during intervals
+
+# Legacy intervals (for backwards compatibility)
 SPONTANEOUS_MESSAGE_INTERVAL = int(os.getenv("SPONTANEOUS_MESSAGE_INTERVAL", "300"))  # 5 minutes in seconds
 PLAYBACK_CHECK_INTERVAL = int(os.getenv("PLAYBACK_CHECK_INTERVAL", "5"))  # 5 seconds
 STATS_UPDATE_INTERVAL = int(os.getenv("STATS_UPDATE_INTERVAL", "30"))  # 30 seconds
