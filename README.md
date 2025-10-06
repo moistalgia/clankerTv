@@ -1,268 +1,303 @@
-# ClankerTV Discord Bot - Modular Structure
+# ClankerTV Discord Bot 🎬🤖
 
-A horror movie marathon Discord bot with Plex integration, AI personality, and interactive movie queue management.
+A sophisticated Discord bot for managing horror movie marathons with Plex integration, AI personality, and interactive features.
 
-## 🏗️ Project Structure
+## ✨ Features
 
-```
-clankerTV/
-├── main.py              # Main entry point
-├── config.py            # Configuration management
-├── clankerTV.py         # Original monolithic file (legacy)
-├── bot/
-│   ├── __init__.py      # Bot package initialization
-│   ├── bot_instance.py  # Bot instance creation
-│   ├── commands/        # Command modules
-│   │   ├── __init__.py
-│   │   ├── movie_commands.py     # Movie browsing and requests
-│   │   ├── playback_commands.py  # Playback control
-│   │   └── ai_commands.py        # AI and personality
-│   ├── events/          # Event handlers
-│   │   ├── __init__.py
-│   │   ├── message_handlers.py   # Message events and AI responses
-│   │   └── voice_handlers.py     # Voice channel notifications
-│   ├── tasks/           # Background tasks
-│   │   ├── __init__.py
-│   │   └── background_tasks.py   # Playlist refresh, playback monitoring
-│   └── ui/              # Discord UI components
-│       ├── __init__.py
-│       ├── list_view.py          # Paginated movie lists
-│       └── playback_view.py      # Playback controls
-├── services/            # External service integrations
-│   ├── __init__.py
-│   ├── plex_service.py          # Plex Media Server operations
-│   └── ai_service.py            # OpenAI integration
-└── models/              # Data models and state
-    ├── __init__.py
-    └── movie_state.py           # Movie queue and state management
-```
+### 🎭 AI Personality System
+- **Clanker**: A dark, knowledgeable horror AI with adjustable personality sliders
+- Responds to horror movie discussions with witty, creepy commentary
+- Personality traits: Creepiness, Humor, Violence, Mystery (0-10 scale)
 
-## 🚀 Getting Started
+### 🎬 Movie Management
+- **Plex Integration**: Browse your horror movie library
+- **Interactive Queue**: Vote on movies with doot system
+- **Smart Recommendations**: AI-powered movie suggestions
+- **Watch History**: Track viewing stats and user badges
+
+### 🎮 Interactive Commands
+- `!nextup` - Interactive movie voting polls
+- `!list` / `!listview` - Browse movie library (text/interactive)
+- `!catchmeup` - AI-generated plot summaries at current timestamp
+- `!analyze` - Deep AI analysis of current movie
+- `!personality` - Adjust Clanker's behavior
+
+### 🏆 Gamification
+- **Badge System**: Earn badges for movie activities
+- **User Stats**: Track movies watched, votes cast, etc.
+- **Horror Bingo**: Interactive horror trope bingo game
+
+### 🎛️ Playback Control
+- Real-time Plex playback monitoring
+- Automatic notifications for movie start/end
+- Timestamp-based AI summaries
+- qBittorrent integration for downloads
+
+## ⚠️ Important Disclaimers
+
+### 🎥 Discord Streaming Compliance
+**This bot does NOT stream content directly.** To comply with Discord's Terms of Service:
+- The bot **controls** a Discord user account that manually streams via screen share
+- **You** are responsible for manually starting Discord streaming
+- The bot only **coordinates** and **monitors** what you're already streaming
+- All content streaming is done through **your** Discord account, not the bot
+
+### 🖥️ Supported Plex Clients
+The bot **only works with specific Plex clients** that support proper session reporting:
+- ✅ **Plex Media Player** (Desktop)
+- ✅ **Roku** Plex app
+- ✅ **Apple TV** Plex app
+- ✅ **Smart TV** apps (Samsung, LG, etc.)
+- ❌ **Web Player** (limited session data)
+- ❌ **Mobile apps** (inconsistent reporting)
+
+### 🎬 Discord Streaming Setup
+For Discord streaming compatibility, you need **Plex Media Player**:
+1. **Download older installer**: [Plex Media Player v2.58.0](https://downloads.plex.tv/plexmediaplayer/) (or compatible version)
+2. **Install on streaming computer**
+3. **Configure for fullscreen playback**
+4. **Use Discord screen share** to stream to your server
+
+### 🚨 Torrent Security Warning
+**The `!fetch` command has NO input sanitization:**
+- ⚠️ **Only provide access to trusted users**
+- ⚠️ **Malicious magnets can download malware**
+- ⚠️ **No content filtering** (could download inappropriate material)
+- ⚠️ **Downloads directly to your system**
+- 🔒 **Consider disabling if unsure** (comment out in utility_commands.py)
+
+## 🚀 Quick Start
 
 ### Prerequisites
-
 - Python 3.8+
-- Discord bot token
+- Discord Bot Token
 - Plex Media Server
-- OpenAI API key
-- qBittorrent (optional)
+- OpenAI API Key
 
 ### Installation
 
-1. **Install dependencies:**
+1. **Clone the repository**
    ```bash
-   pip install discord.py plexapi openai qbittorrent-api requests
+   git clone https://github.com/moistalgia/clankerTv.git
+   cd clankerTv
    ```
 
-2. **Configure the bot:**
-   - Edit `config.py` with your tokens and settings
-   - Or set environment variables (recommended for production):
-     ```bash
-     export DISCORD_TOKEN="your_discord_token"
-     export PLEX_TOKEN="your_plex_token"
-     export OPENAI_API_KEY="your_openai_key"
-     ```
+2. **Set up virtual environment**
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate  # Windows
+   # or
+   source venv/bin/activate  # Linux/Mac
+   ```
 
-3. **Run the bot:**
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+4. **Configure environment**
+   ```bash
+   # Windows
+   copy .env.example .env
+   # Linux/Mac
+   cp .env.example .env
+   
+   # Edit .env with your actual values using any text editor
+   ```
+
+5. **Run the bot**
    ```bash
    python main.py
    ```
+   
+   **Note:** If running without virtual environment, you may need:
+   ```bash
+   pip install python-dotenv
+   python main.py
+   ```
 
-## 🎯 Features
+## ⚙️ Configuration
 
-### Movie Management
-- Browse Plex horror movie library
-- Interactive paginated movie lists
-- Movie request system (doots)
-- Automated queue management
+### Environment Variables
 
-### Playback Control
-- Play/pause/restart controls
-- Interactive Discord UI for movie controls
-- Automatic subtitle downloading
+Create a `.env` file (never commit this!):
 
-### Horror Bingo Game 🎰
-- **AI-Generated Cards:** Movie-specific tropes using OpenAI
-- **Interactive UI:** 25-button Discord interface
-- **Real-time Detection:** Automatic bingo line detection
-- **Badge Integration:** Special achievement rewards
-- **Persistent Progress:** Cards saved across bot restarts
-- **Multi-user Support:** Each user gets unique cards
-
-### Badge & Achievement System 🏆
-- **25+ Unique Badges** across 6 categories
-- **Automatic Tracking** of user progress
-- **Gamification Elements** to encourage engagement
-- **Leaderboards** and progress visualization
-- **Data Persistence** with automatic backups
-- Seek forward/backward
-- Subtitle management
-- Auto-advance to next movie
-
-### AI Personality
-- Configurable personality sliders (creepiness, humor, violence, mystery)
-- Dynamic AI responses to chat messages
-- Movie recommendations and analysis
-- Threatening DMs for bot trigger words
-
-### Background Tasks
-- Automatic playlist refresh from Plex
-- Playback monitoring and auto-advance
-- Spontaneous creepy AI messages
-- Voice channel join/leave notifications
-
-## 🔧 Configuration
-
-### Environment Variables (Recommended)
-```bash
+```env
+# Discord
 DISCORD_TOKEN=your_discord_bot_token
+GUILD_ID=your_discord_server_id
+STREAM_CHANNEL_ID=your_voice_channel_id
+NOTIFY_USER_ID=your_user_id
+
+# Plex
+PLEX_URL=http://localhost:32400
 PLEX_TOKEN=your_plex_token
+PLEX_LIBRARY=Movies
+
+# OpenAI
 OPENAI_API_KEY=your_openai_api_key
-QB_USER=your_qbittorrent_username
-QB_PASS=your_qbittorrent_password
+
+# qBittorrent (optional)
+QB_HOST=localhost:8080
+QB_USER=admin
+QB_PASS=your_password
+DOWNLOAD_PATH=C:\Downloads\Movies
 ```
 
-### Direct Configuration
-Edit values in `config.py` (not recommended for production):
-- Discord bot token and guild settings
-- Plex server URL and authentication
-- OpenAI API configuration
-- qBittorrent connection details
+### Getting API Keys
 
-## 📝 Commands
+#### Discord Bot Token
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application
+3. Go to "Bot" section
+4. Create bot and copy token
+
+#### Plex Token
+1. Log into Plex Web UI
+2. Go to Settings → Account → Privacy
+3. Show Advanced → Get Token
+
+#### OpenAI API Key
+1. Go to [OpenAI Platform](https://platform.openai.com)
+2. Create account and add payment method
+3. Go to API Keys section and create new key
+
+## 📁 Project Structure
+
+```
+clankerTV/
+├── main.py                    # Entry point
+├── config_secure.py           # Secure configuration
+├── requirements.txt           # Dependencies
+├── .env.example              # Environment template
+├── bot/                      # Bot modules
+│   ├── commands/             # Command handlers
+│   │   ├── movie_commands.py      # Movie browsing/voting
+│   │   ├── playback_commands.py   # Playback control
+│   │   ├── ai_commands.py         # AI interactions
+│   │   ├── utility_commands.py    # General utilities
+│   │   └── badge_commands.py      # Badge system
+│   ├── events/               # Event handlers
+│   │   ├── message_handlers.py    # Chat monitoring
+│   │   └── voice_handlers.py      # Voice events
+│   ├── tasks/                # Background tasks
+│   │   └── background_tasks.py    # Monitoring loops
+│   └── ui/                   # Discord UI components
+│       ├── list_view.py           # Paginated lists
+│       ├── nextup_view.py         # Voting interface
+│       └── playback_view.py       # Media controls
+├── services/                 # Core services
+│   ├── ai_service.py              # OpenAI integration
+│   └── plex_service.py            # Plex API wrapper
+├── models/                   # Data models
+│   ├── movie_state.py             # Movie queue state
+│   ├── badge_system.py           # User achievements
+│   └── horror_bingo.py           # Bingo game logic
+└── data/                     # Persistent data (git-ignored)
+    ├── user_stats.json           # User statistics
+    ├── watch_history.json        # Viewing history
+    └── movie_ratings.json        # Movie ratings
+```
+
+## 🎯 Commands Reference
 
 ### Movie Commands
-- `!list [query]` - Show horror movie playlist (filterable)
-- `!listview` - Interactive paginated movie list
-- `!doot <movie>` - Request a movie
-- `/dootdoot` - Slash command with autocomplete
-- `!dootlist` - Show pending requests
-- `!seed <movie>` - Preload movie without voting
-
-### Playbook Commands
-- `!nowplaying` - Current movie with interactive controls
-- `!timeleft` - Remaining time in current movie
-- `!restart` - Restart current movie
-- `!subtitles` - Download and apply subtitles
-- `!clients` - List available Plex clients
-
-### Horror Bingo 🎰
-- `!bingo` - Create bingo card for current movie
-- `!bingo <movie>` - Create bingo card for specific movie
-- `!mybingo` - Show your current bingo card
-- `!clearbingo` - Clear your current bingo card
-- `!bingostats` - Show Horror Bingo statistics
-
-### Movie History 📚
-- `!history` - Show recent movies played by the bot
-- `!history <user>` - Show movies watched by specific user
-- `!moviestats` - Show comprehensive movie statistics
-- `!topwatchers` - Show leaderboard of top watchers
+- `!list [query]` - List movies (with optional search)
+- `!listview [query]` - Interactive paginated movie list
+- `!next` - Show next movie in queue
+- `!nextup` - Interactive voting poll for next movie
+- `!play <title>` - Queue specific movie
+- `!seed <title>` - Add movie to doot list
+- `!removedoot <title>` - Remove from doot list
+- `!cleardoots` - Clear all doot votes
+- `!showdoots` - Show current doot list
 
 ### AI Commands
-- `!lobotomize <settings>` - Adjust AI personality
-- `!movieslike <movie>` - Get similar movie recommendations
-- `!vibe <description>` - Get movies matching a vibe
-- `!whatdidijustwatch [movie]` - Movie analysis and trivia
-- `!catchmeup` - Get AI synopsis at current timestamp
-- `!endinganalysis [movie]` - Deep dive into ending interpretations and theories
+- `!ask <question>` - Ask Clanker about horror movies
+- `!analyze` - AI analysis of current movie
+- `!catchmeup` - Get plot summary up to current timestamp
+- `!personality` - View/adjust personality sliders
+- `!roast <movie>` - Get AI roast of a movie
 
-### Admin Commands
-- `!play <movie>` - Force play a specific movie
-- `!removedoot <movie>` - Remove specific request
-- `!cleardoots` - Clear all requests
-- `!start_marathon` - Begin marathon mode
+### Utility Commands
+- `!stats [user]` - View user statistics
+- `!badges [user]` - View earned badges
+- `!help` - Show command help
+- `!fetch <magnet>` - Download torrent ⚠️ **TRUSTED USERS ONLY**
+- `!status` - Show bot/service status
 
-## 🏛️ Architecture Benefits
+### Playback Commands
+- `!current` - Show what's currently playing
+- `!skip` - Skip current movie (admin only)
+- `!pause` / `!resume` - Playback control
 
-### Modularity
-- **Separation of Concerns:** Each module has a specific responsibility
-- **Easy Testing:** Individual components can be tested in isolation
-- **Maintainability:** Changes to one feature don't affect others
+## 🛡️ Security & Compliance Notes
 
-### Scalability
-- **Service Layer:** External integrations are abstracted
-- **State Management:** Centralized state with clear data models
-- **Event Handling:** Organized event system with proper error handling
+### 🔐 Configuration Security
+- **Never commit** `.env` files or `config.py` with real tokens
+- Use environment variables for all sensitive data
+- The bot includes config validation to prevent startup with placeholder values
+- Consider using Discord's slash commands for improved security
 
-### Developer Experience
-- **Type Hints:** Better IDE support and code clarity
-- **Logging:** Comprehensive logging for debugging
-- **Configuration:** Environment-based configuration for security
-- **Documentation:** Clear docstrings and comments
+### 🚨 Torrent Safety Warning
+- **`!fetch` command is UNSANITIZED** - only give access to trusted users
+- **No malware protection** - malicious magnets can harm your system
+- **No content filtering** - inappropriate material could be downloaded
+- **Recommended**: Disable torrent features for public bots
 
-## 🚦 Migration from Original
+### ⚖️ Legal & ToS Compliance
+- **Bot does not stream content** - only coordinates manual Discord streaming
+- **You are responsible** for all streamed content and copyright compliance
+- **Discord ToS compliance** - streaming is done via your user account, not the bot
+- **Content responsibility** - ensure you have rights to stream any content
 
-The original monolithic `clankerTV.py` file has been split into focused modules:
-
-1. **Configuration** → `config.py`
-2. **Commands** → `bot/commands/`
-3. **Event Handlers** → `bot/events/`
-4. **Background Tasks** → `bot/tasks/`
-5. **UI Components** → `bot/ui/`
-6. **Service Integrations** → `services/`
-7. **Data Models** → `models/`
-
-The bot functionality remains the same, but the code is now:
-- More maintainable and readable
-- Easier to test and debug
-- Better organized for team development
-- More secure with environment variable support
-
-## 🎰 Horror Bingo System
-
-### How It Works
-1. **Generate Card:** Use `!bingo` or `!bingo <movie>` to create a personalized bingo card
-2. **AI-Generated Tropes:** OpenAI creates 25 movie-specific horror tropes
-3. **Interactive Play:** Click buttons in Discord to mark squares when tropes occur
-4. **Real-time Bingo:** Automatic detection of completed lines (rows, columns, diagonals)
-5. **Badge Rewards:** Earn "Horror Bingo Master" badge for your first bingo
-
-### Example Horror Tropes
-Different movies generate different tropes:
-- **Slasher Films:** "Killer calls victim", "Car won't start", "Group splits up"
-- **Supernatural:** "Lights flicker", "Voice whispers", "Mirror reflection"
-- **Psychological:** "Reality questioned", "Unreliable narrator", "Mind games"
-
-### Bingo Card Features
-- **5x5 Grid:** 25 unique tropes per movie
-- **Visual Progress:** Real-time completion tracking
-- **Persistent Storage:** Cards saved across bot restarts
-- **Multiple Lines:** Can complete multiple bingos per card
-- **Clear Option:** Reset card anytime with confirmation
-
-### Demo
-Run the included demo to see how it works:
-```bash
-python demo_horror_bingo.py
-```
-
-## 🔍 Troubleshooting
-
-```
-
-### Common Issues
-
-1. **Import Errors:** Ensure you're running from the project root directory
-2. **Plex Connection:** Check Plex server URL and token
-3. **Discord Permissions:** Verify bot has necessary permissions in your server
-4. **Environment Variables:** Make sure all required variables are set
-
-### Logging
-
-The bot creates a `clanker.log` file with detailed information about:
-- Service connections
-- Command executions  
-- Error messages
-- Background task activities
+### 🔒 Access Control Recommendations
+- Use **private Discord server** for movie nights with trusted friends
+- **Restrict bot permissions** to necessary channels only
+- **Monitor command usage** - check logs for suspicious activity
+- **Regular security updates** - keep dependencies updated
 
 ## 🤝 Contributing
 
-The modular structure makes it easy to contribute:
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-1. **Adding Commands:** Create new command files in `bot/commands/`
-2. **New Services:** Add service classes in `services/`
-3. **UI Components:** Create reusable UI elements in `bot/ui/`
-4. **Background Tasks:** Add scheduled tasks in `bot/tasks/`
+## 📝 License
 
-Each module is self-contained with clear interfaces and documentation.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**Bot not responding**
+- Check Discord token is valid
+- Verify bot has proper permissions in server
+- Check console for error messages
+
+**Plex integration not working**
+- Verify Plex server is running and accessible
+- Check Plex token is valid
+- Ensure library name matches exactly
+
+**AI commands failing**
+- Verify OpenAI API key is valid and has credits
+- Check internet connection
+- Review API usage limits
+
+**qBittorrent integration issues**
+- Ensure qBittorrent is running with Web UI enabled
+- Check login credentials
+- Verify download path exists and is writable
+
+### Getting Help
+
+1. Check the logs in `clanker.log`
+2. Verify all environment variables are set correctly
+3. Test individual components (Plex, OpenAI, Discord)
+4. Open an issue with full error details
+
+## 🎬 Enjoy Your Horror Movie Marathons! 🎭
