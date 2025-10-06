@@ -19,8 +19,8 @@ A sophisticated Discord bot for managing horror movie marathons with Plex integr
 - `!nextup` - Interactive movie voting polls
 - `!list` / `!listview` - Browse movie library (text/interactive)
 - `!catchmeup` - AI-generated plot summaries at current timestamp
-- `!analyze` - Deep AI analysis of current movie
-- `!personality` - Adjust Clanker's behavior
+- `!lobotomize` - Adjust Clanker's personality traits
+- `!bingo` - Interactive horror movie bingo game
 
 ### 🏆 Gamification
 - **Badge System**: Earn badges for movie activities
@@ -204,32 +204,68 @@ clankerTV/
 ### Movie Commands
 - `!list [query]` - List movies (with optional search)
 - `!listview [query]` - Interactive paginated movie list
+- `!doot <title>` - Vote for a movie (adds to requests)
+- `!undoot <title>` - Remove your vote for a movie
 - `!next` - Show next movie in queue
 - `!nextup` - Interactive voting poll for next movie
-- `!play <title>` - Queue specific movie
+- `!play <title>` - Queue specific movie for playback
 - `!seed <title>` - Add movie to doot list
-- `!removedoot <title>` - Remove from doot list
+- `!dootlist` - Show current doot votes
+- `!removedoot <title>` - Remove movie from doot list
 - `!cleardoots` - Clear all doot votes
 - `!showdoots` - Show current doot list
 
 ### AI Commands
-- `!ask <question>` - Ask Clanker about horror movies
-- `!analyze` - AI analysis of current movie
-- `!catchmeup` - Get plot summary up to current timestamp
-- `!personality` - View/adjust personality sliders
-- `!roast <movie>` - Get AI roast of a movie
+- `!lobotomize <traits>` - Set personality sliders (e.g., `creepiness=8 humor=2`)
+- `!movieslike <movie>` - Get 5 similar horror movie suggestions
+- `!vibe <description>` - Get movie suggestions based on your mood/vibe
+- `!whatdidijustwatch [movie]` - Get synopsis and facts about a movie
+- `!endinganalysis [movie]` - Deep analysis of movie ending (spoiler-protected)
+- `!catchmeup` - Get plot summary up to current timestamp (DM)
 
 ### Utility Commands
-- `!stats [user]` - View user statistics
-- `!badges [user]` - View earned badges
-- `!help` - Show command help
+- `!commands` - Show comprehensive help with all commands
 - `!fetch <magnet>` - Download torrent ⚠️ **TRUSTED USERS ONLY**
 - `!status` - Show bot/service status
+- `!check_perms` - Check bot permissions in current channel
 
-### Playback Commands
-- `!current` - Show what's currently playing
-- `!skip` - Skip current movie (admin only)
-- `!pause` / `!resume` - Playback control
+### Playback Commands  
+- `!nowplaying` - Show what's currently playing
+- `!timeleft` - Show time remaining in current movie
+- `!restart` - Restart current movie from beginning
+- `!clients` - Show connected Plex clients
+- `!subtitles` - Toggle subtitles for current session
+
+### Statistics & History
+- `!stats [user]` - View user statistics and watch time
+- `!history [user]` - View watch history
+- `!moviestats <movie>` - Detailed stats for specific movie
+- `!topwatchers` - Show leaderboard of top watchers
+- `!activewatches` - Show currently active viewing sessions
+- `!starttracking` - Begin tracking your watch session
+
+### Rating System
+- `!rate <movie> <rating>` - Rate a movie (1-10)
+- `!ratings <movie>` - View all ratings for a movie
+- `!myratings` - View your personal movie ratings
+- `!addmovie <title>` - Add movie to database for rating
+
+### Badge System
+- `!badges [user]` - View earned badges
+- `!allbadges` - View all available badges and requirements
+- `!leaderboard` - Badge leaderboard
+- `!progress` - View your badge progress
+- `!badgestats` - Overall badge statistics
+- `!savedata` / `!backupdata` - Backup badge data
+
+### Horror Bingo
+- `!bingo` - Start/join horror movie bingo game
+- `!mybingo` - View your current bingo card
+- `!clearbingo` - Clear your bingo progress
+- `!bingostats` - View bingo game statistics
+
+### Admin/Maintenance
+- `!repair` - Repair data inconsistencies (admin only)
 
 ## 🛡️ Security & Compliance Notes
 
