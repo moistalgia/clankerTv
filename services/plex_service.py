@@ -49,12 +49,22 @@ class PlexService:
                 return []
             
             movies = self.library.search(genre="Horror")
-            return [f"{m.title} ({m.year})" for m in movies]
+            # Ensure we're returning strings, not movie objects
+            movie_titles = []
+            for m in movies:
+                try:
+                    title_str = f"{m.title} ({m.year})"
+                    movie_titles.append(title_str)
+                except Exception as e:
+                    print(f"⚠️ Error formatting movie title for {m}: {e}")
+                    continue
+            
+            return movie_titles
         except Exception as e:
             print(f"❌ Failed to fetch horror movies: {e}")
             return []
     
-    def get_movie(self, title_with_year: str):
+    def get_movie(self, title_with_year):
         """
         Fetch Plex movie by 'Title (Year)' format.
         
@@ -66,6 +76,11 @@ class PlexService:
         """
         try:
             if not self.is_connected():
+                return None
+            
+            # Ensure we have a string
+            if not isinstance(title_with_year, str):
+                print(f"❌ get_movie received non-string: {type(title_with_year)} - {title_with_year}")
                 return None
                 
             if title_with_year.endswith(")"):
@@ -80,12 +95,12 @@ class PlexService:
             if results:
                 return results[0]  # return the first match
         except Exception as e:
-            print(f"❌ get_movie failed for {title_with_year}: {e}")
+            print(f"❌ get_movie failed for {title_with_year} (type: {type(title_with_year)}): {e}")
         return None
     
     def get_first_controllable_client(self):
         """
-        Get the first available Plex client for playback control.
+        Get the preferred Plex client for bot control, avoiding personal viewing clients.
         
         Returns:
             PlexClient or None
@@ -95,7 +110,45 @@ class PlexService:
                 return None
                 
             clients = self.plex.clients()
-            return clients[0] if clients else None
+            print(f"🔍 Found {len(clients)} Plex clients")
+            print(f"🔍 Clients: {[client.title for client in clients]}")
+            
+            if not clients:
+                print("❌ No Plex clients found")
+                return None
+            
+            from config import PLEX_CLIENT_NAME
+            
+            # First priority: Use configured client name
+            for client in clients:
+                if client.title == PLEX_CLIENT_NAME:
+                    print(f"🎮 Using configured client: {client.title}")
+                    return client
+            
+            # Second priority: Avoid TV/Roku clients (personal viewing)
+            tv_keywords = ['roku', 'tv', 'samsung', 'lg', 'sony', 'apple tv', 'chromecast', 'fire tv']
+            desktop_clients = []
+            
+            for client in clients:
+                client_name_lower = client.title.lower()
+                is_tv = any(keyword in client_name_lower for keyword in tv_keywords)
+                if not is_tv:
+                    desktop_clients.append(client)
+            
+            if desktop_clients:
+                client = desktop_clients[0]
+                print(f"🎮 Using desktop client: {client.title}")
+                return client
+            
+            # Fallback: Use first available (but warn about TV interference)
+            client = clients[0]
+            print(f"⚠️ Using TV client: {client.title} (may interfere with personal viewing)")
+            return client
+            
+        except Exception as e:
+            print(f"❌ Failed to get Plex client: {e}")
+            return None
+            
         except Exception as e:
             print(f"❌ Failed to get Plex client: {e}")
             return None
@@ -254,7 +307,7 @@ class PlexService:
     
     async def play_movie(self, movie_title: str) -> Dict[str, Any]:
         """
-        Play a specific movie on the first available client.
+        Play a specific movie on the first available client with timeout handling.
         
         Args:
             movie_title: Title of movie to play
@@ -268,18 +321,52 @@ class PlexService:
             if not movie:
                 return {"success": False, "message": f"Could not find {movie_title} in Plex library"}
             
-            # Get client
+            # Get client - try available clients
             client = self.get_first_controllable_client()
             if not client:
-                return {"success": False, "message": "No controllable Plex clients found"}
+                # Last resort: try to get any client at all
+                try:
+                    all_clients = self.plex.clients()
+                    if all_clients:
+                        client = all_clients[0]
+                        print(f"⚠️ Using potentially unresponsive client: {client.title}")
+                    else:
+                        return {"success": False, "message": "No Plex clients found at all"}
+                except Exception:
+                    return {"success": False, "message": "No Plex clients found at all"}
             
-            # Play movie
-            client.playMedia(movie)
-            return {
-                "success": True, 
-                "message": f"Now playing {movie_title} on {client.title}",
-                "client_name": client.title
-            }
+            # Play movie with timeout protection and fallback methods
+            import asyncio
+            try:
+                # Method 1: Try normal playMedia with timeout
+                await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, client.playMedia, movie),
+                    timeout=18.0  # 18 second timeout
+                )
+                
+                return {
+                    "success": True, 
+                    "message": f"Now playing {movie_title} on {client.title}",
+                    "client_name": client.title
+                }
+                
+            except asyncio.TimeoutError:
+                # Method 2: Try with fire-and-forget approach
+                print(f"⚠️ Client {client.title} timed out, trying fire-and-forget method...")
+                try:
+                    # Start playback without waiting for response
+                    asyncio.get_event_loop().run_in_executor(None, client.playMedia, movie)
+                    return {
+                        "success": True,  
+                        "message": f"Started {movie_title} on {client.title} (fire-and-forget)",
+                        "client_name": client.title
+                    }
+                except Exception as e:
+                    print(f"❌ Fire-and-forget also failed: {e}")
+                    return {
+                        "success": False,
+                        "message": f"Client {client.title} is unresponsive - try restarting your Plex app"
+                    }
             
         except Exception as e:
             return {"success": False, "message": f"Failed to play movie: {e}"}

@@ -28,6 +28,9 @@ ANNOUNCE_CHANNEL_ID = os.getenv("ANNOUNCE_CHANNEL_ID", "clanker-commands")
 STREAM_CHANNEL_ID = int(os.getenv("STREAM_CHANNEL_ID", "0"))  # Replace with your voice channel ID
 NOTIFY_USER_ID = int(os.getenv("NOTIFY_USER_ID", "0"))  # Replace with your user ID
 
+# Streaming account to exclude from leaderboards (always "watching" due to streaming)
+STREAMING_ACCOUNT_NAME = "clankerTV"
+
 # Bot command prefix
 COMMAND_PREFIX = "!"
 
@@ -37,7 +40,7 @@ COMMAND_PREFIX = "!"
 
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
 PLEX_TOKEN = os.getenv("PLEX_TOKEN", "YOUR_PLEX_TOKEN_HERE")
-PLEX_CLIENT_NAME = os.getenv("PLEX_CLIENT_NAME", "Plex (Windows)")
+PLEX_CLIENT_NAME = os.getenv("PLEX_CLIENT_NAME", "DESKTOP-CHB1M9E")
 PLEX_LIBRARY = os.getenv("PLEX_LIBRARY", "Movies")
 
 # ========================================

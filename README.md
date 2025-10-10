@@ -27,6 +27,12 @@ A sophisticated Discord bot for managing horror movie marathons with Plex integr
 - **User Stats**: Track movies watched, votes cast, etc.
 - **Horror Bingo**: Interactive horror trope bingo game
 
+### 🎃 October Horror Experience
+- **Progressive Corruption**: Clanker's AI deteriorates throughout October
+- **Spontaneous Events**: Random corruption manifestations with cinematic effects
+- **Recovery System**: Interactive minigames to combat the decay
+- **ARG Elements**: Hidden fragments and mysterious transmissions
+
 ### 🎛️ Playback Control
 - Real-time Plex playback monitoring
 - Automatic notifications for movie start/end
@@ -226,7 +232,7 @@ clankerTV/
 ### Utility Commands
 - `!commands` - Show comprehensive help with all commands
 - `!fetch <magnet>` - Download torrent ⚠️ **TRUSTED USERS ONLY**
-- `!status` - Show bot/service status
+- `!downloads` / `!dl` - Show qBittorrent download status
 - `!check_perms` - Check bot permissions in current channel
 
 ### Playback Commands  
@@ -264,8 +270,14 @@ clankerTV/
 - `!clearbingo` - Clear your bingo progress
 - `!bingostats` - View bingo game statistics
 
+### 🎃 Corruption System (October Horror Features)
+- `!status` / `!corruption` / `!sanity` - Check Clanker's corruption level
+- `!recover` - Participate in recovery minigames to reduce corruption
+- `!purge` - Emergency corruption reset (admin only)
+
 ### Admin/Maintenance
 - `!repair` - Repair data inconsistencies (admin only)
+- `!trigger_event [level]` - Manually trigger corruption event (admin only)
 
 ## 🛡️ Security & Compliance Notes
 

@@ -527,17 +527,23 @@ class WatchBadgeSystem:
         return result
     
     def get_leaderboard(self, category: str = "total_movies", limit: int = 10) -> List[Tuple[UserStats, int]]:
-        """Get leaderboard for specified category."""
+        """Get leaderboard for specified category, excluding streaming account."""
+        from config import STREAMING_ACCOUNT_NAME
+        
+        # Filter out streaming account from leaderboards
+        eligible_users = [user for user in self.user_stats.values() 
+                         if user.username.lower() != STREAMING_ACCOUNT_NAME.lower()]
+        
         if category == "total_movies":
-            sorted_users = sorted(self.user_stats.values(), key=lambda x: x.total_movies, reverse=True)
+            sorted_users = sorted(eligible_users, key=lambda x: x.total_movies, reverse=True)
         elif category == "watch_time":
-            sorted_users = sorted(self.user_stats.values(), key=lambda x: x.total_watch_time_minutes, reverse=True)
+            sorted_users = sorted(eligible_users, key=lambda x: x.total_watch_time_minutes, reverse=True)
         elif category == "current_streak":
-            sorted_users = sorted(self.user_stats.values(), key=lambda x: x.current_streak_days, reverse=True)
+            sorted_users = sorted(eligible_users, key=lambda x: x.current_streak_days, reverse=True)
         elif category == "badges":
-            sorted_users = sorted(self.user_stats.values(), key=lambda x: len(self.user_badges.get(x.user_id, [])), reverse=True)
+            sorted_users = sorted(eligible_users, key=lambda x: len(self.user_badges.get(x.user_id, [])), reverse=True)
         else:
-            sorted_users = list(self.user_stats.values())
+            sorted_users = list(eligible_users)
         
         return [(user, rank + 1) for rank, user in enumerate(sorted_users[:limit])]
     

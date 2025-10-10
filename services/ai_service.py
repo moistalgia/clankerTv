@@ -18,6 +18,7 @@ class AIService:
     def __init__(self):
         self.client = OpenAI(api_key=OPENAI_API_KEY)
         self.sliders = DEFAULT_SLIDERS.copy()
+        self.corruption_system = None  # Will be set by bot initialization
     
     def get_personality_sliders(self) -> Dict[str, int]:
         """Get current personality slider values."""
@@ -167,17 +168,18 @@ class AIService:
             {"role": "user", "content": user_text}
         ]
     
-    async def generate_response(self, message_content: str, user_id: int = None, username: str = None) -> str:
+    async def generate_response(self, message_content: str, user_id: int = None, username: str = None, bypass_corruption: bool = False) -> str:
         """
-        Generate AI response to a message with personality.
+        Generate AI response to a message with personality and corruption.
         
         Args:
             message_content: User's message content
             user_id: Discord user ID for badge tracking
             username: Username for badge tracking
+            bypass_corruption: If True, skip corruption for utility responses
             
         Returns:
-            AI-generated response
+            AI-generated response (potentially corrupted)
         """
         try:
             response = self.client.chat.completions.create(
@@ -187,17 +189,65 @@ class AIService:
                 max_tokens=MAX_TOKENS
             )
             
+            base_response = response.choices[0].message.content.strip()
+            
+            # Apply corruption if system is available and not bypassed
+            should_bypass = bypass_corruption or self._should_bypass_corruption(message_content)
+            if self.corruption_system and not should_bypass:
+                base_response = self.corruption_system.corrupt_text(base_response)
+            
             # Track AI interaction for badges (if badge system is available)
             if hasattr(self, 'badge_system') and user_id:
                 self.badge_system.increment_ai_interaction(user_id, username)
             
-            return response.choices[0].message.content.strip()
+            return base_response
+            
         except Exception as e:
+            if self.corruption_system:
+                # Return a corrupted error message
+                return self.corruption_system.corrupt_text(f"Error processing request: {e}")
             raise Exception(f"OpenAI API error: {e}")
     
     def set_badge_system(self, badge_system):
         """Set the badge system for tracking interactions."""
         self.badge_system = badge_system
+    
+    def set_corruption_system(self, corruption_system):
+        """Set the corruption system for response modification."""
+        self.corruption_system = corruption_system
+    
+    def _should_bypass_corruption(self, message_content: str) -> bool:
+        """Determine if corruption should be bypassed for utility responses."""
+        utility_keywords = [
+            'help', 'status', 'list', 'queue', 'next', 'current',
+            'search', 'rating', 'info', 'fetch', 'download', 
+            'bingo', 'badge', 'stats', 'diagnostic', 'recovery'
+        ]
+        
+        # Check if message contains utility command indicators
+        content_lower = message_content.lower()
+        
+        # If it's a direct utility question, bypass corruption
+        if any(keyword in content_lower for keyword in utility_keywords):
+            return True
+            
+        # If AI personality sliders are producing their own corruption (creepiness + mystery >= 18),
+        # bypass the corruption system to avoid double-corruption
+        if hasattr(self, 'sliders'):
+            creepiness = self.sliders.get('creepiness', 0)
+            mystery = self.sliders.get('mystery', 0)
+            if creepiness + mystery >= 18:  # Both near max (9+9 or 10+8, etc.)
+                return True
+            
+        # If corruption level is very high (>8), occasionally provide clean responses
+        if self.corruption_system:
+            corruption_level = self.corruption_system.calculate_corruption_level()
+            if corruption_level > 8.0:
+                # 20% chance of clean response even at high corruption
+                import random
+                return random.random() < 0.2
+                
+        return False
     
     async def generate_threatening_dm(self, message_content: str) -> str:
         """

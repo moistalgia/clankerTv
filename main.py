@@ -74,12 +74,13 @@ from bot.bot_instance import bot
 from services.plex_service import PlexService
 from services.ai_service import AIService
 from models.movie_state import MovieState
+from models.corruption_system import CorruptionSystem
 
 # Import command modules
-from bot.commands import movie_commands, playback_commands, ai_commands, utility_commands, badge_commands
+from bot.commands import movie_commands, playback_commands, ai_commands, utility_commands, badge_commands, recovery_commands
 
 # Import event handlers and tasks
-from bot.events import message_handlers, voice_handlers
+from bot.events import message_handlers, voice_handlers, corruption_events
 from bot.tasks import background_tasks
 
 # Global service references for startup checks
@@ -96,13 +97,15 @@ async def setup_bot():
     plex_service = PlexService()
     ai_service = AIService()
     movie_state = MovieState()
+    corruption_system = CorruptionSystem()
     
     # Store global references for startup checks
     _plex_service = plex_service
     _movie_state = movie_state
     
-    # Connect AI service to badge system for tracking interactions
+    # Connect systems together
     ai_service.set_badge_system(movie_state.badge_system)
+    ai_service.set_corruption_system(corruption_system)
     
     # Check service connections
     if not plex_service.is_connected():
@@ -115,7 +118,13 @@ async def setup_bot():
         await ai_commands.setup(bot, ai_service, movie_state, plex_service)
         await utility_commands.setup(bot, plex_service, ai_service, movie_state, movie_state.badge_system)
         await badge_commands.setup(bot, movie_state.badge_system, plex_service)
-        safe_log(logger, 'info', "✅ All command cogs loaded successfully")
+        
+        # Setup recovery commands with corruption system
+        recovery_cog = recovery_commands.RecoveryCommands(bot)
+        recovery_cog.set_corruption_system(corruption_system)
+        await bot.add_cog(recovery_cog)
+        
+        safe_log(logger, 'info', "✅ All command cogs loaded successfully (including corruption system)")
     except Exception as e:
         safe_log(logger, 'error', f"❌ Failed to load command cogs: {e}")
         return False
@@ -123,8 +132,12 @@ async def setup_bot():
     # Setup event handlers
     try:
         message_handlers.setup(bot, ai_service)
-        voice_handlers.setup(bot, plex_service, movie_state)
-        safe_log(logger, 'info', "✅ Event handlers registered successfully")
+        # Get hit list system from utility commands
+        utility_cog = bot.get_cog('UtilityCommands')
+        hit_list = utility_cog.hit_list if utility_cog else None
+        voice_handlers.setup(bot, plex_service, movie_state, hit_list)
+        await corruption_events.setup(bot, corruption_system, ai_service)
+        safe_log(logger, 'info', "✅ Event handlers registered successfully (including corruption events)")
     except Exception as e:
         safe_log(logger, 'error', f"❌ Failed to setup event handlers: {e}")
         return False

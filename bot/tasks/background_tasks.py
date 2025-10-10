@@ -8,6 +8,7 @@ playback monitoring, and spontaneous AI messages.
 
 import random
 import logging
+import asyncio
 from datetime import datetime, timezone
 from discord import Activity, ActivityType
 from discord.ext import commands, tasks
@@ -211,22 +212,48 @@ async def play_next_movie():
             movie_title = random.choice(playlist)
             logger.info(f"Playing random movie: {movie_title}")
 
-        # Play the selected movie
-        result = await _plex_service.play_movie(movie_title)
-        
-        if result['success']:
+        # Play the selected movie with timeout protection
+        try:
+            result = await asyncio.wait_for(
+                _plex_service.play_movie(movie_title),
+                timeout=20.0  # Increased to 20 seconds for slow Plex clients
+            )
+            
+            if result['success']:
+                _movie_state.set_current_movie(movie_title)
+                
+                # Start badge tracking for all users in voice channel
+                await _start_movie_tracking(movie_title)
+                
+                # Send announcement
+                channel = _bot.get_channel(ANNOUNCE_CHANNEL_ID)
+                if channel:
+                    await channel.send(f"▶️ Now playing: **{movie_title}** on **{result['client_name']}**")
+                    logger.info(f"Announced now playing: {movie_title}")
+                    
+            else:
+                logger.error(f"Failed to play movie: {result['message']}")
+                # Try to announce the failure
+                channel = _bot.get_channel(ANNOUNCE_CHANNEL_ID) 
+                if channel:
+                    await channel.send(f"❌ Failed to play **{movie_title}**: {result['message']}")
+                    
+        except asyncio.TimeoutError:
+            # For timeouts, assume the movie might still be starting
+            logger.warning(f"Timeout starting movie: {movie_title} - but movie may still be loading...")
             _movie_state.set_current_movie(movie_title)
             
-            # Start badge tracking for all users in voice channel
-            await _start_movie_tracking(movie_title)
-            
-            # Send announcement
+            # Announce with a more positive message
             channel = _bot.get_channel(ANNOUNCE_CHANNEL_ID)
             if channel:
-                await channel.send(f"▶️ Now playing: **{movie_title}** on **{result['client_name']}**")
-                logger.info(f"Announced now playing: {movie_title}")
-        else:
-            logger.error(f"Failed to play movie: {result['message']}")
+                await channel.send(f"🎬 Starting **{movie_title}** - may take a moment to begin playback...")
+                
+        except Exception as e:
+            logger.error(f"Unexpected error playing movie {movie_title}: {e}")
+            # Announce error to users
+            channel = _bot.get_channel(ANNOUNCE_CHANNEL_ID)
+            if channel:
+                await channel.send(f"❌ Error playing **{movie_title}**: {e}")
             
     except Exception as e:
         safe_log(logger, 'error', f"❌ Failed to play next movie: {e}")

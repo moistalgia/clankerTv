@@ -6,11 +6,14 @@ General utility commands like help, status, and bot information.
 """
 
 import discord
-from discord import app_commands
+from discord import app_commands, Interaction
 from discord.ext import commands
 from typing import Optional
+import subprocess
+import os
+import tempfile
 
-from config import GUILD_ID, AUTO_SAVE_INTERVAL_MINUTES, QB_HOST, QB_USER, QB_PASS, DOWNLOAD_PATH
+from config import GUILD_ID, AUTO_SAVE_INTERVAL_MINUTES, QB_HOST, QB_USER, QB_PASS, DOWNLOAD_PATH, NOTIFY_USER_ID
 
 from services.plex_service import PlexService
 # Import qBittorrent for fetch and status commands
@@ -23,6 +26,7 @@ except ImportError:
 from services.ai_service import AIService
 from models.movie_state import MovieState
 from models.horror_bingo import HorrorBingoSystem, BingoView
+from models.hit_list import HitListSystem
 
 
 class UtilityCommands(commands.Cog):
@@ -34,6 +38,7 @@ class UtilityCommands(commands.Cog):
         self.ai_service = ai_service
         self.movie_state = movie_state
         self.horror_bingo = HorrorBingoSystem(ai_service, badge_system)
+        self.hit_list = HitListSystem()
         
         # Initialize qBittorrent client
         self.qb = None
@@ -59,7 +64,7 @@ class UtilityCommands(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Failed to add magnet: {e}")
 
-    @commands.command(name="status")
+    @commands.command(name="downloads", aliases=["dl", "download_status"])
     async def download_status(self, ctx: commands.Context):
         """Show status of active qBittorrent downloads."""
         if not QB_AVAILABLE:
@@ -121,6 +126,8 @@ class UtilityCommands(commands.Cog):
             value=(
                 "`!nowplaying` — Playback control and info for the current film\n"
                 "`!start_marathon` — Start the horror marathon\n"
+                "`!stop` — Stop current movie (when you're last viewer)\n"
+                "`!seek <time>` — Jump to timestamp (1h23m45s, 23:45, 1:23:45)\n"
                 "`!play <movie>` — Admin override — immediately play a movie\n"
                 "`!restart` — Restart the current movie from the beginning\n"
                 "`!timeleft` — Show remaining time in the current movie\n"
@@ -197,6 +204,20 @@ class UtilityCommands(commands.Cog):
             inline=False
         )
 
+        # Corruption System (October Horror Features)
+        embed.add_field(
+            name="🎃 Corruption System",
+            value=(
+                "`!status` / `!corruption` / `!sanity` — Check Clanker's corruption level\n"
+                "`!recover [type]` — Play recovery minigames (memory/circuit/static/debug/binary)\n"
+                "`!reboot` — Attempt emergency system reboot\n"
+                "`!diagnostics` — Run full system diagnostic\n"
+                "`!fragment` — Retrieve ARG memory fragment\n"
+                "`!recovery_help` — Show recovery system help"
+            ),
+            inline=False
+        )
+
         # Movie History & Ratings
         embed.add_field(
             name="📚 Movie History & Ratings",
@@ -225,12 +246,25 @@ class UtilityCommands(commands.Cog):
             inline=False
         )
 
+        # Hit List
+        embed.add_field(
+            name="🎯 Hit List",
+            value=(
+                "`!hitlist` — Show your hit list of movies you want to watch\n"
+                "`/hitlist <movie>` — Add a movie to your hit list (with autocomplete!) 🌟\n"
+                "`!hitlist remove <movie>` — Remove a movie from your hit list\n"
+                "`!hitlist show [movie]` — Show all hit list movies or who wants a specific movie"
+            ),
+            inline=False
+        )
+
         # Misc
         embed.add_field(
             name="🧩 Misc",
             value=(
                 "`!fetch <magnet link>` — Add a magnet link to qBittorrent (for media you own)\n"
-                "`!status` — Show status of active qBittorrent downloads\n"
+                "`!downloads` / `!dl` — Show status of active qBittorrent downloads\n"
+                "`!ahk [script_name]` — Execute AutoHotkey script (admin only)\n"
                 "`!commands` — Show this help message\n"
                 "`!check_perms` — Check bot permissions in server"
             ),
@@ -238,6 +272,284 @@ class UtilityCommands(commands.Cog):
         )
 
         await ctx.send(embed=embed)
+
+    @commands.command(name="refresh")
+    async def refresh_library(self, ctx: commands.Context):
+        """Refresh Plex library and update horror movie playlist."""
+        if not self.plex_service.is_connected():
+            await ctx.send("❌ Plex service is not connected.")
+            return
+        
+        try:
+            # Refresh the Plex library
+            await ctx.send("🔄 Refreshing Plex library...")
+            
+            # Get the library section and refresh it
+            library = self.plex_service.library
+            if library:
+                library.update()
+                
+                # Wait a moment then get updated movie count
+                await ctx.send("📚 Library refresh initiated. Fetching updated horror movies...")
+                
+                # Get fresh horror movie list
+                horror_movies = await self.plex_service.get_horror_movies()
+                
+                embed = discord.Embed(
+                    title="✅ Library Refreshed",
+                    description=f"Found **{len(horror_movies)}** horror movies in library",
+                    color=discord.Color.green()
+                )
+                
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("❌ Could not access Plex library for refresh.")
+                
+        except Exception as e:
+            await ctx.send(f"❌ Error refreshing library: {e}")
+
+    @commands.command(name="start_marathon")
+    async def start_marathon(self, ctx: commands.Context):
+        """Start the horror marathon - begins playback of movies from the queue."""
+        
+        if not self.plex_service or not self.plex_service.is_connected():
+            await ctx.send("❌ Plex service is not connected. Cannot start marathon.")
+            return
+        
+        # Check if there's already a movie playing
+        try:
+            sessions = self.plex_service.get_current_sessions()
+            movie_sessions = [s for s in sessions if s.type == "movie"]
+            
+            if movie_sessions:
+                current_movie = movie_sessions[0].title
+                await ctx.send(f"🎬 Marathon is already running! Currently playing: **{current_movie}**\n"
+                             f"Use `!nowplaying` for playback controls.")
+                return
+        except Exception as e:
+            print(f"Error checking current sessions: {e}")
+        
+        # Try to start the next movie from the queue
+        try:
+            # Get the next movie to play (this would typically be from a queue/playlist)
+            # For now, we'll check if there are any doots (requests) or fall back to library
+            
+            # Check for pending requests first
+            if hasattr(self.movie_state, 'doots') and self.movie_state.doots:
+                # Get the most voted movie or first in queue
+                next_movie = list(self.movie_state.doots.keys())[0]
+                await ctx.send(f"🎬 Starting marathon with requested movie: **{next_movie}**")
+            else:
+                # Fall back to a random horror movie from the library
+                try:
+                    horror_movies = await self.plex_service.get_horror_movies()
+                    if horror_movies:
+                        import random
+                        next_movie = random.choice(horror_movies)  # horror_movies already contains strings
+                        await ctx.send(f"🎬 Starting marathon with random movie: **{next_movie}**")
+                    else:
+                        await ctx.send("❌ No horror movies found in library to start marathon.")
+                        return
+                except Exception as e:
+                    await ctx.send(f"❌ Could not access movie library: {e}")
+                    return
+            
+            # Attempt to play the movie
+            success = await self.plex_service.play_movie(next_movie)
+            
+            if success:
+                # Set current movie state
+                self.movie_state.set_current_movie(next_movie)
+                
+                embed = discord.Embed(
+                    title="🎃 Horror Marathon Started!",
+                    description=f"Now playing: **{next_movie}**",
+                    color=discord.Color.dark_red()
+                )
+                embed.add_field(
+                    name="🎮 Controls", 
+                    value="Use `!nowplaying` for playback controls\nUse `/dootdoot` to request movies", 
+                    inline=False
+                )
+                embed.add_field(
+                    name="🏆 Features",
+                    value="• Badge tracking active\n• Horror Bingo available with `!bingo`\n• Movie ratings with `!rate`",
+                    inline=False
+                )
+                
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send(f"❌ Failed to start playback of **{next_movie}**. Check Plex server and client connections.")
+                
+        except Exception as e:
+            await ctx.send(f"❌ Error starting marathon: {e}")
+
+    @commands.command(name="testplay")
+    @commands.has_permissions(administrator=True)
+    async def test_play_movie(self, ctx: commands.Context, *, movie_title: str = "The Thing (1982)"):
+        """Test playing a specific movie to debug Plex client issues."""
+        
+        if not self.plex_service or not self.plex_service.is_connected():
+            await ctx.send("❌ Plex service is not connected.")
+            return
+        
+        loading_msg = await ctx.send(f"🧪 Testing playback of **{movie_title}**...")
+        
+        try:
+            # Get available clients
+            clients = await self.plex_service.get_available_clients()
+            
+            embed = discord.Embed(
+                title="🧪 Plex Client Test",
+                color=discord.Color.blue()
+            )
+            
+            if not clients:
+                embed.add_field(name="❌ No Clients", value="No Plex clients found", inline=False)
+            else:
+                client_list = "\n".join([f"• **{c['title']}** ({c['platform']})" for c in clients])
+                embed.add_field(name="📱 Available Clients", value=client_list, inline=False)
+            
+            # Try to play the movie
+            result = await self.plex_service.play_movie(movie_title)
+            
+            if result['success']:
+                embed.add_field(
+                    name="✅ Playback Result", 
+                    value=f"Success! {result['message']}", 
+                    inline=False
+                )
+                embed.color = discord.Color.green()
+            else:
+                embed.add_field(
+                    name="❌ Playback Result", 
+                    value=f"Failed: {result['message']}", 
+                    inline=False
+                )
+                embed.color = discord.Color.red()
+            
+            await loading_msg.edit(content=None, embed=embed)
+            
+        except Exception as e:
+            await loading_msg.edit(content=f"❌ Test failed with error: {e}")
+
+    @commands.command(name="stop")
+    async def stop_playback(self, ctx: commands.Context):
+        """Stop current movie playback when you're the last person viewing."""
+        
+        if not self.plex_service or not self.plex_service.is_connected():
+            await ctx.send("❌ Plex service is not connected.")
+            return
+        
+        try:
+            # Check if there's currently a movie playing
+            sessions = self.plex_service.get_current_sessions()
+            movie_sessions = [s for s in sessions if s.type == "movie"]
+            
+            if not movie_sessions:
+                await ctx.send("⏹️ No movie is currently playing.")
+                return
+            
+            current_session = movie_sessions[0]
+            movie_title = current_session.title
+            
+            # Check voice channel for active viewers
+            from config import STREAM_CHANNEL_ID
+            voice_channel = ctx.bot.get_channel(STREAM_CHANNEL_ID)
+            
+            if voice_channel and hasattr(voice_channel, 'members'):
+                # Count non-bot members in voice channel
+                real_viewers = [m for m in voice_channel.members if not m.bot]
+                
+                if len(real_viewers) > 1:
+                    await ctx.send(f"⚠️ Cannot stop **{movie_title}** - {len(real_viewers)} people are still in the voice channel.")
+                    return
+            
+            # Get client and stop playback
+            client = self.plex_service.get_first_controllable_client()
+            if not client:
+                await ctx.send("❌ No controllable Plex client found.")
+                return
+            
+            # Stop the playback
+            client.stop()
+            
+            # Clear current movie state
+            self.movie_state.set_current_movie(None)
+            
+            await ctx.send(f"⏹️ Stopped **{movie_title}**. Marathon can be restarted with `!start_marathon`.")
+            
+        except Exception as e:
+            await ctx.send(f"❌ Error stopping playback: {e}")
+
+    @commands.command(name="seek")
+    async def seek_to_timestamp(self, ctx: commands.Context, *, timestamp: str):
+        """Seek to a specific timestamp. Format: 1h23m45s, 23:45, or 1:23:45"""
+        
+        if not self.plex_service or not self.plex_service.is_connected():
+            await ctx.send("❌ Plex service is not connected.")
+            return
+        
+        try:
+            # Parse timestamp to milliseconds
+            def parse_timestamp(ts):
+                """Parse various timestamp formats to milliseconds."""
+                ts = ts.lower().strip()
+                
+                # Format: 1h23m45s
+                if 'h' in ts or 'm' in ts or 's' in ts:
+                    import re
+                    hours = int(re.search(r'(\d+)h', ts).group(1)) if 'h' in ts else 0
+                    minutes = int(re.search(r'(\d+)m', ts).group(1)) if 'm' in ts else 0
+                    seconds = int(re.search(r'(\d+)s', ts).group(1)) if 's' in ts else 0
+                    return (hours * 3600 + minutes * 60 + seconds) * 1000
+                
+                # Format: 23:45 or 1:23:45
+                parts = ts.split(':')
+                if len(parts) == 2:  # mm:ss
+                    minutes, seconds = map(int, parts)
+                    return (minutes * 60 + seconds) * 1000
+                elif len(parts) == 3:  # hh:mm:ss
+                    hours, minutes, seconds = map(int, parts)
+                    return (hours * 3600 + minutes * 60 + seconds) * 1000
+                else:
+                    raise ValueError("Invalid timestamp format")
+            
+            seek_ms = parse_timestamp(timestamp)
+            
+            # Check for active session
+            sessions = self.plex_service.get_current_sessions()
+            movie_sessions = [s for s in sessions if s.type == "movie"]
+            
+            if not movie_sessions:
+                await ctx.send("❌ No movie is currently playing.")
+                return
+            
+            # Get client and seek
+            client = self.plex_service.get_first_controllable_client()
+            if not client:
+                await ctx.send("❌ No controllable Plex client found.")
+                return
+            
+            # Perform seek
+            client.seekTo(seek_ms)
+            
+            # Format response
+            hours = seek_ms // (3600 * 1000)
+            minutes = (seek_ms % (3600 * 1000)) // (60 * 1000)
+            seconds = (seek_ms % (60 * 1000)) // 1000
+            
+            if hours > 0:
+                time_str = f"{hours}h {minutes}m {seconds}s"
+            else:
+                time_str = f"{minutes}m {seconds}s"
+            
+            await ctx.send(f"⏭️ Seeked to **{time_str}**")
+            
+        except ValueError as e:
+            await ctx.send(f"❌ Invalid timestamp format. Use: `1h23m45s`, `23:45`, or `1:23:45`")
+        except Exception as e:
+            await ctx.send(f"❌ Error seeking to timestamp: {e}")
 
     @commands.command(name="check_perms")
     async def check_permissions(self, ctx: commands.Context):
@@ -260,6 +572,111 @@ class UtilityCommands(commands.Cog):
         msg += f"**Channel permissions for #{channel.name}:**\n✅ {', '.join(channel_perm_list)}\n❌ {', '.join(missing_channel_perms)}"
         
         await ctx.send(msg)
+
+    @commands.command(name="ahk")
+    async def run_autohotkey(self, ctx: commands.Context, script_name: str = "discord_automation"):
+        """Execute an AutoHotkey script."""
+        
+        # Security check - only allow specific users or roles
+        if not (ctx.author.guild_permissions.administrator or ctx.author.id in [NOTIFY_USER_ID]):
+            await ctx.send("❌ You don't have permission to run AutoHotkey scripts.")
+            return
+        
+        try:
+            # Define script directory
+            scripts_dir = os.path.join(os.getcwd(), "autohotkey_scripts")
+            script_path = os.path.join(scripts_dir, f"{script_name}.ahk")
+            
+            # Check if script exists
+            if not os.path.exists(script_path):
+                # Create default Discord automation script if it doesn't exist
+                if script_name == "discord_automation":
+                    await self._create_default_discord_script(scripts_dir, script_path)
+                else:
+                    await ctx.send(f"❌ Script `{script_name}.ahk` not found in `autohotkey_scripts/` folder.")
+                    return
+            
+            # Try to find AutoHotkey executable
+            ahk_paths = [
+                r"C:\Program Files\AutoHotkey\AutoHotkey.exe",
+                r"C:\Program Files (x86)\AutoHotkey\AutoHotkey.exe",
+                "AutoHotkey.exe"  # If in PATH
+            ]
+            
+            ahk_exe = None
+            for path in ahk_paths:
+                if os.path.exists(path) or path == "AutoHotkey.exe":
+                    ahk_exe = path
+                    break
+            
+            if not ahk_exe:
+                await ctx.send("❌ AutoHotkey not found. Please install AutoHotkey first.")
+                return
+            
+            # Execute the script
+            result = subprocess.run([ahk_exe, script_path], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  timeout=30)
+            
+            if result.returncode == 0:
+                await ctx.send(f"✅ AutoHotkey script `{script_name}` executed successfully!")
+            else:
+                await ctx.send(f"❌ Script execution failed. Error: {result.stderr}")
+                
+        except subprocess.TimeoutExpired:
+            await ctx.send("⏰ Script execution timed out (30s limit).")
+        except Exception as e:
+            await ctx.send(f"❌ Error executing script: {e}")
+
+    async def _create_default_discord_script(self, scripts_dir: str, script_path: str):
+        """Create a default Discord automation script."""
+        os.makedirs(scripts_dir, exist_ok=True)
+        
+        default_script = '''
+; Discord Automation Script
+; Generated by ClankerTV Bot
+; Press Ctrl+D to run, F1 to get coordinates, Esc to exit
+
+; Define your click coordinates here (replace with actual coordinates)
+Click1X := 400
+Click1Y := 300
+Click2X := 600
+Click2Y := 500
+
+^d::
+    ; Activate Discord window
+    WinActivate, ahk_exe Discord.exe
+    WinWaitActive, ahk_exe Discord.exe, , 3
+    
+    ; Make Discord fullscreen
+    Send, {F11}
+    Sleep, 1000
+    
+    ; First click
+    Click, %Click1X%, %Click1Y%
+    Sleep, 500
+    
+    ; Second click
+    Click, %Click2X%, %Click2Y%
+    
+    ; Optional: Exit fullscreen after 2 seconds
+    Sleep, 2000
+    Send, {F11}
+return
+
+; Press F1 to get current mouse coordinates
+F1::
+MouseGetPos, xpos, ypos
+MsgBox, Discord Coordinates: X=%xpos% Y=%ypos%
+return
+
+; Press Esc to stop script
+Esc::ExitApp
+'''
+        
+        with open(script_path, 'w') as f:
+            f.write(default_script)
 
     @commands.command(name="bingo")
     async def horror_bingo(self, ctx: commands.Context, *, movie_title: str = None):
@@ -542,44 +959,72 @@ class UtilityCommands(commands.Cog):
         
         # Basic stats
         total_watches = len(watch_data)
-        unique_movies = len(set(w.movie_title for w in watch_data))
-        unique_watchers = len(set(w.user_id for w in watch_data))
         
-        completed_watches = len([w for w in watch_data if w.is_completed])
+        # Build all stats in one pass to ensure consistency
+        unique_plays = set()
+        unique_movies = set()
+        unique_watchers = set()
+        movie_play_counts = {}
+        genre_counts = {}
+        year_counts = {}
+        
+        completed_watches = 0
+        total_minutes = 0
+        
+        for watch in watch_data:
+            # Track basic stats
+            unique_movies.add(watch.movie_title)
+            unique_watchers.add(watch.user_id)
+            
+            if watch.is_completed:
+                completed_watches += 1
+            
+            if watch.watch_duration_minutes and watch.watch_duration_minutes > 0:
+                total_minutes += watch.watch_duration_minutes
+            
+            # Group simultaneous watches as one "play"
+            play_key = f"{watch.movie_title}-{watch.start_time.strftime('%Y%m%d%H%M')}"
+            
+            if play_key not in unique_plays:
+                unique_plays.add(play_key)
+                
+                # Count movie plays
+                movie_play_counts[watch.movie_title] = movie_play_counts.get(watch.movie_title, 0) + 1
+                
+                # Count genres (only once per unique play)
+                for genre in watch.genres:
+                    genre_counts[genre] = genre_counts.get(genre, 0) + 1
+                
+                # Count decades (only once per unique play)
+                if watch.year:
+                    decade = (watch.year // 10) * 10
+                    year_counts[f"{decade}s"] = year_counts.get(f"{decade}s", 0) + 1
+        
+        unique_movie_count = len(unique_movies)
+        unique_movie_plays = len(unique_plays)
+        unique_watcher_count = len(unique_watchers)
         completion_rate = (completed_watches / total_watches * 100) if total_watches > 0 else 0
-        
-        total_minutes = sum(w.watch_duration_minutes for w in watch_data if w.watch_duration_minutes and w.watch_duration_minutes > 0)
         
         embed.add_field(
             name="🎬 Movies",
-            value=f"**{unique_movies}** unique movies\n**{total_watches}** total watches\n**{completion_rate:.1f}%** completion rate",
+            value=f"**{unique_movie_count}** unique movies\n**{unique_movie_plays}** times played\n**{total_watches}** total watches\n**{completion_rate:.1f}%** completion rate",
             inline=True
         )
         
         embed.add_field(
             name="👥 Users",
-            value=f"**{unique_watchers}** unique watchers\n**{total_minutes//60:.0f}h {total_minutes%60}m** total watched",
+            value=f"**{unique_watcher_count}** unique watchers\n**{total_minutes//60:.0f}h {total_minutes%60}m** total watched",
             inline=True
         )
         
         # Most watched movie
-        movie_counts = {}
-        for watch in watch_data:
-            movie_counts[watch.movie_title] = movie_counts.get(watch.movie_title, 0) + 1
-        
-        if movie_counts:
-            most_watched = max(movie_counts.items(), key=lambda x: x[1])
+        if movie_play_counts:
+            most_watched = max(movie_play_counts.items(), key=lambda x: x[1])
             embed.add_field(
                 name="🏆 Most Watched",
                 value=f"**{most_watched[0]}**\n({most_watched[1]} times)",
                 inline=True
             )
-        
-        # Genre breakdown
-        genre_counts = {}
-        for watch in watch_data:
-            for genre in watch.genres:
-                genre_counts[genre] = genre_counts.get(genre, 0) + 1
         
         if genre_counts:
             top_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -590,13 +1035,7 @@ class UtilityCommands(commands.Cog):
                 inline=True
             )
         
-        # Year breakdown 
-        year_counts = {}
-        for watch in watch_data:
-            if watch.year:
-                decade = (watch.year // 10) * 10
-                year_counts[f"{decade}s"] = year_counts.get(f"{decade}s", 0) + 1
-        
+        # Year breakdown (already calculated in single pass above)
         if year_counts:
             top_decades = sorted(year_counts.items(), key=lambda x: x[1], reverse=True)[:3]
             decade_text = "\n".join([f"**{decade}**: {count}" for decade, count in top_decades])
@@ -809,9 +1248,14 @@ class UtilityCommands(commands.Cog):
         except Exception:
             pass  # Will use fallback calculation
         
+        # Count excluding streaming account
+        from config import STREAMING_ACCOUNT_NAME
+        real_watchers = [w for w in active_watches.values() 
+                        if w.username.lower() != STREAMING_ACCOUNT_NAME.lower()]
+        
         embed = discord.Embed(
             title="👥 Active Watch Sessions",
-            description=f"Currently tracking **{len(active_watches)}** users",
+            description=f"Currently tracking **{len(real_watchers)}** users",
             color=discord.Color.green()
         )
         
@@ -828,12 +1272,16 @@ class UtilityCommands(commands.Cog):
                 inline=False
             )
         
-        # List all active watchers with their accurate watch times
+        # List all active watchers with their accurate watch times (excluding streaming account)
         watcher_info = []
         for user_id, watch in active_watches.items():
             try:
                 user = self.bot.get_user(user_id)
                 username = user.display_name if user else watch.username
+                
+                # Skip streaming account
+                if watch.username.lower() == STREAMING_ACCOUNT_NAME.lower():
+                    continue
                 
                 # Calculate actual watch duration based on movie content seen
                 if current_position_ms and watch.join_position_ms is not None:
@@ -1258,6 +1706,203 @@ class UtilityCommands(commands.Cog):
         except Exception as e:
             await loading_msg.edit(content=f"❌ Error repairing movie: {e}")
 
+    @commands.group(name="hitlist", invoke_without_command=True)
+    async def hitlist(self, ctx: commands.Context):
+        """Show your personal hit list of movies you want to watch."""
+        user_hit_list = self.hit_list.get_user_hit_list(ctx.author.id)
+        
+        if not user_hit_list:
+            await ctx.send("🎯 Your hit list is empty! Use `/hitlist <movie>` to add movies you want to watch.")
+            return
+        
+        embed = discord.Embed(
+            title=f"🎯 {ctx.author.display_name}'s Hit List",
+            description=f"**{len(user_hit_list)}** movies you want to watch",
+            color=discord.Color.red()
+        )
+        
+        # Show movies with interest counts
+        movie_list = []
+        for movie in user_hit_list:
+            interest_count = self.hit_list.get_movie_interest_count(movie)
+            if interest_count > 1:
+                movie_list.append(f"• **{movie}** _(+{interest_count-1} others interested)_")
+            else:
+                movie_list.append(f"• **{movie}**")
+        
+        embed.add_field(
+            name="Movies",
+            value="\n".join(movie_list[:15]),  # Limit to avoid embed size issues
+            inline=False
+        )
+        
+        if len(user_hit_list) > 15:
+            embed.add_field(
+                name="",
+                value=f"_...and {len(user_hit_list) - 15} more movies_",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @hitlist.command(name="add")
+    async def hitlist_add(self, ctx: commands.Context, *, movie_title: str):
+        """Add a movie to your hit list."""
+        if not movie_title.strip():
+            await ctx.send("❌ Please provide a movie title.")
+            return
+        
+        movie_title = movie_title.strip()
+        
+        # Check if movie exists in Plex library (optional validation)
+        horror_movies = await self.plex_service.get_horror_movies()
+        if horror_movies and movie_title not in horror_movies:
+            # Try to find similar movies
+            similar = [m for m in horror_movies if movie_title.lower() in m.lower()]
+            if similar:
+                embed = discord.Embed(
+                    title="🤔 Movie Not Found",
+                    description=f"'{movie_title}' not found in library. Did you mean:",
+                    color=discord.Color.orange()
+                )
+                embed.add_field(
+                    name="Similar Movies",
+                    value="\n".join([f"• {movie}" for movie in similar[:5]]),
+                    inline=False
+                )
+                embed.add_field(
+                    name="Add Anyway?",
+                    value="Use `/hitlist <movie>` if you're sure",
+                    inline=False
+                )
+                await ctx.send(embed=embed)
+                return
+        
+        # Add to hit list
+        added = self.hit_list.add_to_hit_list(ctx.author.id, movie_title)
+        
+        if not added:
+            await ctx.send(f"🎯 **{movie_title}** is already on your hit list!")
+            return
+        
+        # Show success with interest count
+        interest_count = self.hit_list.get_movie_interest_count(movie_title)
+        
+        embed = discord.Embed(
+            title="🎯 Added to Hit List",
+            description=f"Added **{movie_title}** to your hit list",
+            color=discord.Color.green()
+        )
+        
+        if interest_count > 1:
+            embed.add_field(
+                name="Interest Level",
+                value=f"🔥 **{interest_count}** users want to watch this!",
+                inline=False
+            )
+        
+        await ctx.send(embed=embed)
+
+    @hitlist.command(name="remove")
+    async def hitlist_remove(self, ctx: commands.Context, *, movie_title: str):
+        """Remove a movie from your hit list."""
+        if not movie_title.strip():
+            await ctx.send("❌ Please provide a movie title.")
+            return
+        
+        movie_title = movie_title.strip()
+        removed = self.hit_list.remove_from_hit_list(ctx.author.id, movie_title)
+        
+        if not removed:
+            await ctx.send(f"❌ **{movie_title}** is not on your hit list.")
+            return
+        
+        embed = discord.Embed(
+            title="🗑️ Removed from Hit List",
+            description=f"Removed **{movie_title}** from your hit list",
+            color=discord.Color.orange()
+        )
+        
+        await ctx.send(embed=embed)
+
+    @hitlist.command(name="show", aliases=["all"])
+    async def hitlist_show(self, ctx: commands.Context, *, movie_title: str = None):
+        """Show all movies people want to watch, or who wants to watch a specific movie."""
+        
+        if movie_title:
+            # Show who wants to watch a specific movie
+            movie_title = movie_title.strip()
+            interested_users = self.hit_list.get_users_interested_in_movie(movie_title)
+            
+            if not interested_users:
+                await ctx.send(f"❌ No one has **{movie_title}** on their hit list.")
+                return
+            
+            embed = discord.Embed(
+                title=f"🎯 Who Wants to Watch",
+                description=f"**{movie_title}**",
+                color=discord.Color.blue()
+            )
+            
+            # Get usernames
+            user_names = []
+            for user_id in interested_users:
+                try:
+                    user = self.bot.get_user(user_id)
+                    if user:
+                        user_names.append(user.display_name)
+                    else:
+                        user_names.append(f"User {user_id}")
+                except:
+                    user_names.append(f"User {user_id}")
+            
+            embed.add_field(
+                name=f"Interested Users ({len(interested_users)})",
+                value="\n".join([f"• {name}" for name in user_names]),
+                inline=False
+            )
+            
+            await ctx.send(embed=embed)
+            
+        else:
+            # Show all movies with interest counts
+            all_movies = self.hit_list.get_all_movies_with_interest()
+            
+            if not all_movies:
+                await ctx.send("🎯 No movies on anyone's hit list yet!")
+                return
+            
+            embed = discord.Embed(
+                title="🎯 All Hit List Movies",
+                description=f"**{len(all_movies)}** movies people want to watch",
+                color=discord.Color.purple()
+            )
+            
+            # Sort by interest count (most wanted first)
+            sorted_movies = sorted(all_movies.items(), key=lambda x: x[1], reverse=True)
+            
+            movie_list = []
+            for movie, count in sorted_movies[:20]:  # Limit to top 20
+                if count > 1:
+                    movie_list.append(f"• **{movie}** _({count} users)_")
+                else:
+                    movie_list.append(f"• **{movie}**")
+            
+            embed.add_field(
+                name="Most Wanted Movies",
+                value="\n".join(movie_list),
+                inline=False
+            )
+            
+            if len(all_movies) > 20:
+                embed.add_field(
+                    name="",
+                    value=f"_...and {len(all_movies) - 20} more movies_",
+                    inline=False
+                )
+            
+            await ctx.send(embed=embed)
+
 
 class BingoClearConfirmView(discord.ui.View):
     """Confirmation view for clearing bingo cards."""
@@ -1300,6 +1945,65 @@ class BingoClearConfirmView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
 
 
+class HitListSlashCommand(commands.Cog):
+    """Slash command for adding movies to hit list with autocomplete."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, hit_list_system):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.hit_list = hit_list_system
+
+    async def movie_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from Plex library."""
+        try:
+            horror_movies = await self.plex_service.get_horror_movies()
+            if not horror_movies:
+                return []
+            
+            # Filter movies that match the current input
+            return [
+                app_commands.Choice(name=movie, value=movie)
+                for movie in horror_movies
+                if current.lower() in movie.lower()
+            ][:25]  # Discord max 25 choices
+        except Exception:
+            return []
+
+    @app_commands.command(
+        name="hitlist",
+        description="Add a movie to your hit list of movies you want to watch"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to add to your hit list")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def hitlist_slash(self, interaction: discord.Interaction, movie_name: str):
+        """Slash command for adding movies to hit list with autocomplete."""
+        
+        # Add to hit list
+        added = self.hit_list.add_to_hit_list(interaction.user.id, movie_name)
+        
+        if not added:
+            await interaction.response.send_message(
+                f"🎯 **{movie_name}** is already on your hit list!",
+                ephemeral=True
+            )
+            return
+        
+        # Show success with interest count
+        interest_count = self.hit_list.get_movie_interest_count(movie_name)
+        
+        if interest_count > 1:
+            message = f"🎯 Added **{movie_name}** to your hit list!\n🔥 **{interest_count}** users want to watch this!"
+        else:
+            message = f"🎯 Added **{movie_name}** to your hit list!"
+        
+        await interaction.response.send_message(message, ephemeral=False)
+
+
 async def setup(bot: commands.Bot, plex_service: PlexService, ai_service: AIService, movie_state: MovieState, badge_system=None):
     """Setup function to add utility commands to the bot."""
-    await bot.add_cog(UtilityCommands(bot, plex_service, ai_service, movie_state, badge_system))
+    utility_cog = UtilityCommands(bot, plex_service, ai_service, movie_state, badge_system)
+    await bot.add_cog(utility_cog)
+    
+    # Add the hit list slash command
+    await bot.add_cog(HitListSlashCommand(bot, plex_service, utility_cog.hit_list))

@@ -14,14 +14,16 @@ logger = logging.getLogger(__name__)
 # Service references for watch tracking
 _plex_service = None
 _movie_state = None
+_hit_list = None
 
 
-def setup(bot: commands.Bot, plex_service=None, movie_state=None):
+def setup(bot: commands.Bot, plex_service=None, movie_state=None, hit_list=None):
     """Setup voice state event handlers."""
-    global _plex_service, _movie_state
+    global _plex_service, _movie_state, _hit_list
     
     _plex_service = plex_service
     _movie_state = movie_state
+    _hit_list = hit_list
     
     @bot.event
     async def on_voice_state_update(member, before, after):
@@ -58,6 +60,9 @@ def setup(bot: commands.Bot, plex_service=None, movie_state=None):
                 
                 # Start watch tracking if there's a movie currently playing
                 await _start_tracking_for_new_joiner(member)
+                
+                # Check for hit list suggestions when users join
+                await _check_hit_list_suggestions(after.channel)
 
         # Someone left the streaming channel
         if before.channel and before.channel.id == STREAM_CHANNEL_ID:
@@ -164,3 +169,92 @@ async def _finish_tracking_for_leaver(member):
         
     except Exception as e:
         logger.error(f"Failed to finish tracking for leaver {member.display_name}: {e}")
+
+
+async def _check_hit_list_suggestions(voice_channel):
+    """Check if users in voice channel have shared movie interests and suggest them."""
+    if not _hit_list or not voice_channel:
+        return
+    
+    try:
+        # Don't spam suggestions
+        if not _hit_list.should_suggest_now():
+            return
+        
+        # Get all non-bot users in voice channel
+        voice_users = [member.id for member in voice_channel.members if not member.bot]
+        
+        if len(voice_users) < 2:
+            return  # Need at least 2 users for suggestions
+        
+        # Find shared movie interests
+        shared_movies = _hit_list.find_shared_interests(voice_users)
+        
+        if not shared_movies:
+            return  # No shared interests
+        
+        # Mark that we're making a suggestion to prevent spam
+        _hit_list.mark_suggestion_made()
+        
+        # Sort by most interested users first
+        sorted_movies = sorted(shared_movies.items(), key=lambda x: len(x[1]), reverse=True)
+        
+        # Build suggestion message
+        import discord
+        embed = discord.Embed(
+            title="👻 Séance Detected!",
+            description="Users in voice chat have movies on their hit lists:",
+            color=discord.Color.purple()
+        )
+        
+        suggestion_text = []
+        for movie, interested_user_ids in sorted_movies[:3]:  # Top 3 suggestions
+            # Get usernames
+            usernames = []
+            for user_id in interested_user_ids:
+                try:
+                    user = voice_channel.guild.get_member(user_id)
+                    if user:
+                        usernames.append(user.display_name)
+                    else:
+                        usernames.append(f"User {user_id}")
+                except:
+                    usernames.append(f"User {user_id}")
+            
+            suggestion_text.append(f"🎬 **{movie}** _{', '.join(usernames)}_")
+        
+        embed.add_field(
+            name="Suggested Movies",
+            value="\n".join(suggestion_text),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Ready to Watch?",
+            value="Use `!vote <movie>` to start a poll or `!play <movie>` to begin immediately!",
+            inline=False
+        )
+        
+        # Send to the text channel associated with the voice channel or a default channel
+        text_channel = None
+        
+        # Try to find an associated text channel or use general
+        for channel in voice_channel.guild.channels:
+            if channel.type == discord.ChannelType.text:
+                if ("movie" in channel.name.lower() or 
+                    "stream" in channel.name.lower() or 
+                    "general" in channel.name.lower()):
+                    text_channel = channel
+                    break
+        
+        if not text_channel:
+            # Fallback to first text channel
+            text_channel = next((c for c in voice_channel.guild.channels 
+                               if c.type == discord.ChannelType.text), None)
+        
+        if text_channel:
+            await text_channel.send(embed=embed)
+            logger.info(f"Sent hit list suggestions for {len(voice_users)} users in voice")
+        
+    except Exception as e:
+        logger.error(f"Failed to check hit list suggestions: {e}")
