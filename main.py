@@ -117,7 +117,7 @@ async def setup_bot():
         await playback_commands.setup(bot, plex_service, movie_state)
         await ai_commands.setup(bot, ai_service, movie_state, plex_service)
         await utility_commands.setup(bot, plex_service, ai_service, movie_state, movie_state.badge_system)
-        await badge_commands.setup(bot, movie_state.badge_system, plex_service)
+        await badge_commands.setup(bot, movie_state.badge_system, plex_service, corruption_system)
         
         # Setup recovery commands with corruption system
         recovery_cog = recovery_commands.RecoveryCommands(bot)

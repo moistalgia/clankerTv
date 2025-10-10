@@ -6,8 +6,11 @@ Contains commands for AI interactions, movie suggestions, and personality manage
 """
 
 import discord
+from discord import app_commands, Interaction
 from discord.ext import commands
 from typing import Optional
+
+from config import GUILD_ID
 
 from services.ai_service import AIService
 from models.movie_state import MovieState
@@ -44,17 +47,7 @@ class AICommands(commands.Cog):
             f"Mystery: {new_sliders['mystery']}/10"
         )
 
-    @commands.command(name="movieslike")
-    async def movies_like(self, ctx: commands.Context, *, movie_title: str):
-        """
-        Suggests 5 horror movies similar to the given movie title.
-        Uses OpenAI ChatCompletion and returns numbered list with title and year.
-        """
-        try:
-            suggestions = await self.ai_service.get_similar_movies(movie_title)
-            await ctx.send(f"🎬 Movies like **{movie_title}**:\n{suggestions}\n\nUse !doot <title> to request one!")
-        except Exception as e:
-            await ctx.send(f"❌ Failed to fetch movie suggestions: {e}")
+
 
     @commands.command(name="vibe")
     async def vibe_suggestions(self, ctx: commands.Context, *, user_input: str):
@@ -354,6 +347,228 @@ class AICommands(commands.Cog):
                 await ctx.send(f"❌ Failed to generate catch-up summary: {error_msg}")
 
 
+class MoviesLikeSlashCommand(commands.Cog):
+    """Slash command version of movieslike for better UX with autocomplete."""
+    
+    def __init__(self, bot: commands.Bot, ai_service: AIService, movie_state: MovieState):
+        self.bot = bot
+        self.ai_service = ai_service
+        self.movie_state = movie_state
+
+    async def movie_autocomplete(self, interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from the playlist."""
+        playlist = self.movie_state.playlist
+        if not playlist:
+            return []
+
+        return [
+            app_commands.Choice(name=movie, value=movie)
+            for movie in playlist
+            if current.lower() in movie.lower()
+        ][:25]  # Discord max 25 choices
+
+    @app_commands.command(
+        name="movieslike",
+        description="Get 5 horror movie recommendations similar to any movie (autocomplete shows playlist)"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_title="Enter any movie title (autocomplete shows our playlist for convenience)")
+    @app_commands.autocomplete(movie_title=movie_autocomplete)
+    async def movieslike(self, interaction: Interaction, movie_title: str):
+        """Slash command for getting similar movie recommendations. Accepts any movie title, autocomplete shows playlist for convenience."""
+        try:
+            # Defer response since AI calls can take time
+            await interaction.response.defer()
+            
+            suggestions = await self.ai_service.get_similar_movies(movie_title)
+            await interaction.followup.send(
+                f"🎬 Movies like **{movie_title}**:\n{suggestions}\n\nUse `/dootdoot <title>` to request one!"
+            )
+        except Exception as e:
+            await interaction.followup.send(
+                f"❌ Failed to fetch movie suggestions: {e}",
+                ephemeral=True
+            )
+
+
+class AIAnalysisSlashCommands(commands.Cog):
+    """AI analysis slash commands with autocomplete."""
+    
+    def __init__(self, bot: commands.Bot, ai_service: AIService, movie_state: MovieState, plex_service: PlexService):
+        self.bot = bot
+        self.ai_service = ai_service
+        self.movie_state = movie_state
+        self.plex_service = plex_service
+
+    async def movie_autocomplete(self, interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from the playlist."""
+        playlist = self.movie_state.playlist
+        if not playlist:
+            return []
+
+        return [
+            app_commands.Choice(name=movie, value=movie)
+            for movie in playlist
+            if current.lower() in movie.lower()
+        ][:25]  # Discord max 25 choices
+
+    @app_commands.command(
+        name="whatdidijustwatch",
+        description="Get AI analysis and interesting facts about a movie"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to analyze (leave empty for currently playing movie)")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def whatdidijustwatch(self, interaction: Interaction, movie_name: str = None):
+        """Get AI movie analysis with autocomplete."""
+        await interaction.response.defer()  # AI calls can take time
+        
+        # If no movie_name given, check active Plex sessions
+        if not movie_name:
+            try:
+                current_info = await self.plex_service.get_current_movie_info()
+                if not current_info:
+                    await interaction.followup.send("❌ No movie is currently playing, and no title was provided.", ephemeral=True)
+                    return
+                movie_name = current_info['title']
+            except Exception as e:
+                await interaction.followup.send(f"❌ Failed to get current movie: {e}", ephemeral=True)
+                return
+
+        try:
+            analysis = await self.ai_service.analyze_movie(movie_name)
+            
+            embed = discord.Embed(
+                title=f"🎬 {movie_name}",
+                description="What you just watched:",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="AI Analysis", value=analysis[:1024], inline=False)
+            if len(analysis) > 1024:
+                embed.add_field(name="Continued...", value=analysis[1024:2048], inline=False)
+            
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to fetch movie analysis: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="endinganalysis",
+        description="Get AI analysis of a movie's ending with interpretations and theories"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to analyze the ending (leave empty for currently playing)")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def endinganalysis(self, interaction: Interaction, movie_name: str = None):
+        """Get AI ending analysis with autocomplete."""
+        await interaction.response.defer()  # AI calls can take time
+        
+        # If no movie_name given, check active Plex sessions
+        if not movie_name:
+            try:
+                current_info = await self.plex_service.get_current_movie_info()
+                if not current_info:
+                    await interaction.followup.send("❌ No movie is currently playing, and no title was provided.", ephemeral=True)
+                    return
+                movie_name = current_info['title']
+            except Exception as e:
+                await interaction.followup.send(f"❌ Failed to get current movie: {e}", ephemeral=True)
+                return
+
+        try:
+            analysis = await self.ai_service.analyze_movie_ending(movie_name)
+            
+            embed = discord.Embed(
+                title=f"🎭 {movie_name} - Ending Analysis",
+                description="Deep dive into the conclusion:",
+                color=discord.Color.purple()
+            )
+            embed.add_field(name="Interpretation & Theories", value=analysis[:1024], inline=False)
+            if len(analysis) > 1024:
+                embed.add_field(name="Continued...", value=analysis[1024:2048], inline=False)
+            
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to analyze movie ending: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="catchmeup",
+        description="Get plot summary up to current timestamp (sent privately)"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def catchmeup(self, interaction: Interaction):
+        """Analyze current movie timestamp and DM plot synopsis up to that point."""
+        await interaction.response.defer(ephemeral=True)  # This is always private
+        
+        try:
+            # Get current movie information and timestamp
+            current_info = await self.plex_service.get_current_movie_info()
+            if not current_info:
+                await interaction.followup.send("❌ No movie is currently playing.", ephemeral=True)
+                return
+
+            session = current_info.get('session')
+            if not session:
+                await interaction.followup.send("❌ Could not get playback session information.", ephemeral=True)
+                return
+
+            # Calculate progress percentage and time elapsed
+            if session.viewOffset is None or session.duration is None:
+                await interaction.followup.send("❌ Could not determine current playback position.", ephemeral=True)
+                return
+
+            elapsed_ms = session.viewOffset
+            total_ms = session.duration
+            progress_percent = (elapsed_ms / total_ms) * 100
+            
+            # Convert to human-readable time
+            elapsed_minutes = elapsed_ms // (1000 * 60)
+            elapsed_hours = elapsed_minutes // 60
+            elapsed_mins_remainder = elapsed_minutes % 60
+            
+            if elapsed_hours > 0:
+                time_str = f"{elapsed_hours}h {elapsed_mins_remainder}m"
+            else:
+                time_str = f"{elapsed_minutes}m"
+
+            movie_title = current_info['title']
+
+            # Get AI summary up to current point
+            summary = await self.ai_service.generate_catchup_summary(
+                movie_title, progress_percent, time_str
+            )
+            
+            # Create embed for the summary
+            embed = discord.Embed(
+                title=f"📝 Catch-Up Summary: {movie_title}",
+                description=f"Plot summary up to **{time_str}** ({progress_percent:.1f}% complete)",
+                color=discord.Color.blue()
+            )
+            
+            # Split summary into chunks if too long
+            if len(summary) <= 1024:
+                embed.add_field(name="What's Happened So Far", value=summary, inline=False)
+            else:
+                # Split into multiple fields
+                chunks = [summary[i:i+1024] for i in range(0, len(summary), 1024)]
+                for i, chunk in enumerate(chunks[:3]):  # Max 3 chunks
+                    field_name = "What's Happened So Far" if i == 0 else "Continued..."
+                    embed.add_field(name=field_name, value=chunk, inline=False)
+            
+            embed.add_field(
+                name="⚠️ Spoiler-Free Zone", 
+                value="This summary only covers events up to the current timestamp.",
+                inline=False
+            )
+            
+            # Send privately via followup
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to generate catch-up summary: {e}", ephemeral=True)
+
+
 async def setup(bot: commands.Bot, ai_service: AIService, movie_state: MovieState, plex_service: PlexService):
     """Setup function to add AI commands to the bot."""
     await bot.add_cog(AICommands(bot, ai_service, movie_state, plex_service))
+    await bot.add_cog(MoviesLikeSlashCommand(bot, ai_service, movie_state))
+    await bot.add_cog(AIAnalysisSlashCommands(bot, ai_service, movie_state, plex_service))

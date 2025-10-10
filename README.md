@@ -207,39 +207,58 @@ clankerTV/
 
 ## 🎯 Commands Reference
 
-### Movie Commands
+### ⚡ Slash Commands (Recommended)
+*Modern Discord commands with autocomplete and better UX*
+
+**Movie Commands:**
+- `/play <title>` - Play specific movie immediately (with autocomplete)
+- `/doot <title>` - Vote for a movie (with playlist autocomplete)
+- `/dootlist` - Show current voting results
+- `/undoot <title>` - Remove your vote from a movie (with autocomplete)
+- `/seed <title>` - Preload movie into dootlist without voting (with autocomplete)
+- `/list [query]` - Browse movie collection with search (with autocomplete)
+
+**AI Analysis:**
+- `/movieslike <movie>` - Get similar horror movie suggestions (flexible autocomplete)
+- `/whatdidijustwatch [movie]` - Get AI analysis and facts about a movie (with autocomplete)
+- `/endinganalysis [movie]` - Deep dive into movie ending analysis (with autocomplete)
+
+**Ratings & Games:**
+- `/rate <movie> <rating>` - Rate a movie 1-10 (with movie autocomplete)
+- `/ratings [movie]` - View movie ratings (individual or aggregate)
+- `/bingo [movie]` - Generate horror bingo card for a movie
+
+**Playback:**
+- `/timeleft` - Show remaining time for current movie
+- `/nowplaying` - Show what's currently playing
+- `/clients` - Show active Plex clients and status
+- `/subtitles` - Download and apply subtitles to current movie
+
+### 🔤 Classic Text Commands
+*Legacy commands still available*
+
+**Movie Commands:**
 - `!list [query]` - List movies (with optional search)
 - `!listview [query]` - Interactive paginated movie list
-- `!doot <title>` - Vote for a movie (adds to requests)
-- `!undoot <title>` - Remove your vote for a movie
 - `!next` - Show next movie in queue
 - `!nextup` - Interactive voting poll for next movie
-- `!play <title>` - Queue specific movie for playback
-- `!seed <title>` - Add movie to doot list
-- `!dootlist` - Show current doot votes
 - `!removedoot <title>` - Remove movie from doot list
 - `!cleardoots` - Clear all doot votes
 - `!showdoots` - Show current doot list
 
-### AI Commands
+**AI Commands:**
 - `!lobotomize <traits>` - Set personality sliders (e.g., `creepiness=8 humor=2`)
-- `!movieslike <movie>` - Get 5 similar horror movie suggestions
 - `!vibe <description>` - Get movie suggestions based on your mood/vibe
-- `!whatdidijustwatch [movie]` - Get synopsis and facts about a movie
-- `!endinganalysis [movie]` - Deep analysis of movie ending (spoiler-protected)
 - `!catchmeup` - Get plot summary up to current timestamp (DM)
 
-### Utility Commands
+**Utility Commands:**
 - `!commands` - Show comprehensive help with all commands
 - `!fetch <magnet>` - Download torrent ⚠️ **TRUSTED USERS ONLY**
 - `!downloads` / `!dl` - Show qBittorrent download status
 - `!check_perms` - Check bot permissions in current channel
 
-### Playback Commands  
-- `!nowplaying` - Show what's currently playing
-- `!timeleft` - Show time remaining in current movie
+**Playback Commands:**
 - `!restart` - Restart current movie from beginning
-- `!clients` - Show connected Plex clients
 - `!subtitles` - Toggle subtitles for current session
 
 ### Statistics & History

@@ -231,7 +231,7 @@ async def _check_hit_list_suggestions(voice_channel):
         
         embed.add_field(
             name="Ready to Watch?",
-            value="Use `!vote <movie>` to start a poll or `!play <movie>` to begin immediately!",
+            value="Use `!vote <movie>` to start a poll or `/play <movie>` to begin immediately!",
             inline=False
         )
         

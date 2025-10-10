@@ -128,7 +128,7 @@ class UtilityCommands(commands.Cog):
                 "`!start_marathon` — Start the horror marathon\n"
                 "`!stop` — Stop current movie (when you're last viewer)\n"
                 "`!seek <time>` — Jump to timestamp (1h23m45s, 23:45, 1:23:45)\n"
-                "`!play <movie>` — Admin override — immediately play a movie\n"
+                "`/play <movie>` — Play a movie immediately (with autocomplete)\n"
                 "`!restart` — Restart the current movie from the beginning\n"
                 "`!timeleft` — Show remaining time in the current movie\n"
                 "`!subtitles` — Download the top-ranked OpenSubtitles subtitle and apply it\n"
@@ -158,7 +158,7 @@ class UtilityCommands(commands.Cog):
             name="🤖 AI & Analysis",
             value=(
                 "`!catchmeup` — Get AI summary of current movie up to timestamp (DM)\n"
-                "`!movieslike <movie>` — 5 horror movie recommendations (AI)\n"
+                "`/movieslike <movie>` — 5 horror movie recommendations for any movie (AI, with playlist autocomplete)\n"
                 "`!vibe <words>` — Get horror suggestions matching a vibe\n"
                 "`!whatdidijustwatch [movie]` — Provide synopsis and trivia for the film\n"
                 "`!endinganalysis [movie]` — Deep dive into ending interpretations and theories\n"
@@ -2000,6 +2000,478 @@ class HitListSlashCommand(commands.Cog):
         await interaction.response.send_message(message, ephemeral=False)
 
 
+class MovieSlashCommands(commands.Cog):
+    """Collection of movie-related slash commands with autocomplete."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, ai_service: AIService, movie_state: MovieState, badge_system=None):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.ai_service = ai_service
+        self.movie_state = movie_state
+        self.badge_system = badge_system
+
+    async def movie_autocomplete(self, interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from the playlist."""
+        playlist = self.movie_state.playlist
+        if not playlist:
+            return []
+
+        return [
+            app_commands.Choice(name=movie, value=movie)
+            for movie in playlist
+            if current.lower() in movie.lower()
+        ][:25]  # Discord max 25 choices
+
+    @app_commands.command(
+        name="rate",
+        description="Rate a movie from 1-10 stars"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(
+        rating="Rating from 1 to 10", 
+        movie_title="Pick a movie to rate (autocomplete available)"
+    )
+    @app_commands.autocomplete(movie_title=movie_autocomplete)
+    async def rate(self, interaction: Interaction, rating: int, movie_title: str):
+        """Rate a movie from 1-10 stars with autocomplete."""
+        if not self.badge_system:
+            await interaction.response.send_message("❌ Badge system not available - ratings not supported.", ephemeral=True)
+            return
+        
+        if not (1 <= rating <= 10):
+            await interaction.response.send_message("❌ Rating must be between 1 and 10 stars!", ephemeral=True) 
+            return
+
+        try:
+            await self.badge_system.rate_movie(interaction.user.id, movie_title, rating)
+            stars = "⭐" * rating
+            await interaction.response.send_message(f"✅ Rated **{movie_title}**: {stars} ({rating}/10)")
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to rate movie: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="ratings",
+        description="Show ratings for a specific movie or all ratings"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_title="Pick a movie to see ratings (leave empty for all ratings)")
+    @app_commands.autocomplete(movie_title=movie_autocomplete)
+    async def ratings(self, interaction: Interaction, movie_title: str = None):
+        """Show movie ratings with autocomplete."""
+        if not self.badge_system:
+            await interaction.response.send_message("❌ Badge system not available - ratings not supported.", ephemeral=True)
+            return
+
+        try:
+            if movie_title:
+                # Show ratings for specific movie
+                ratings_data = await self.badge_system.get_movie_ratings(movie_title)
+                if not ratings_data:
+                    await interaction.response.send_message(f"❌ No ratings found for **{movie_title}**", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(title=f"🎬 Ratings for {movie_title}", color=discord.Color.gold())
+                
+                # Add individual ratings
+                ratings_text = []
+                for user_id, rating in ratings_data.items():
+                    user = self.bot.get_user(user_id)
+                    username = user.display_name if user else f"User {user_id}"
+                    stars = "⭐" * rating
+                    ratings_text.append(f"{username}: {stars} ({rating}/10)")
+                
+                embed.add_field(name="User Ratings", value="\n".join(ratings_text), inline=False)
+                
+                # Calculate average
+                avg_rating = sum(ratings_data.values()) / len(ratings_data)
+                avg_stars = "⭐" * round(avg_rating)
+                embed.add_field(name="Average Rating", value=f"{avg_stars} ({avg_rating:.1f}/10)", inline=False)
+                
+                await interaction.response.send_message(embed=embed)
+            else:
+                # Show recent ratings
+                all_ratings = await self.badge_system.get_recent_ratings(limit=10)
+                if not all_ratings:
+                    await interaction.response.send_message("❌ No ratings found", ephemeral=True)
+                    return
+                
+                embed = discord.Embed(title="🎬 Recent Movie Ratings", color=discord.Color.gold())
+                
+                ratings_text = []
+                for movie, user_id, rating in all_ratings:
+                    user = self.bot.get_user(user_id)
+                    username = user.display_name if user else f"User {user_id}"
+                    stars = "⭐" * rating
+                    ratings_text.append(f"**{movie}**: {stars} ({rating}/10) - {username}")
+                
+                embed.description = "\n".join(ratings_text)
+                await interaction.response.send_message(embed=embed)
+                
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to get ratings: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="bingo",
+        description="Generate a horror bingo card for a movie"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_title="Pick a movie for bingo card generation (optional)")
+    @app_commands.autocomplete(movie_title=movie_autocomplete)
+    async def bingo(self, interaction: Interaction, movie_title: str = None):
+        """Generate horror bingo card with autocomplete."""
+        await interaction.response.defer()  # Bingo generation can take time
+        
+        try:
+            # Use provided movie or current playing movie
+            target_movie = movie_title
+            if not target_movie:
+                current_info = await self.plex_service.get_current_movie_info()
+                if current_info:
+                    target_movie = current_info.get('title', 'Generic Horror Movie')
+                else:
+                    target_movie = 'Generic Horror Movie'
+            
+            # Import bingo system here to avoid circular imports
+            from models.horror_bingo import HorrorBingoSystem
+            bingo_system = HorrorBingoSystem()
+            
+            # Generate bingo card
+            bingo_card = await bingo_system.create_bingo_card(interaction.user.id, target_movie)
+            
+            embed = discord.Embed(
+                title=f"🎯 Horror Bingo: {target_movie}",
+                description=f"Watch for these tropes during the movie!",
+                color=discord.Color.red()
+            )
+            
+            # Format bingo card as grid
+            grid_text = ""
+            for i in range(5):
+                row = []
+                for j in range(5):
+                    idx = i * 5 + j
+                    if idx < len(bingo_card.tropes):
+                        if i == 2 and j == 2:  # Center square
+                            row.append("🎬 FREE")
+                        else:
+                            trope = bingo_card.tropes[idx]
+                            row.append(f"• {trope[:20]}..." if len(trope) > 20 else f"• {trope}")
+                    else:
+                        row.append("• ???")
+                grid_text += "\n".join(row) + "\n\n"
+            
+            embed.add_field(name="Your Bingo Card", value=grid_text[:1024], inline=False)  # Discord limit
+            embed.set_footer(text="Use !mybingo to track your progress during the movie!")
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to generate bingo card: {e}", ephemeral=True)
+
+
+class StatisticsSlashCommands(commands.Cog):
+    """Statistics and history slash commands."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, movie_state: MovieState, badge_system=None):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.movie_state = movie_state
+        self.badge_system = badge_system
+
+    @app_commands.command(
+        name="history",
+        description="Show recent movie watch history"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(user="User to check history for (defaults to overall bot history)")
+    async def history(self, interaction: Interaction, user: Optional[discord.Member] = None):
+        """Show recent movie watch history - mimics original !history command."""
+        await interaction.response.defer()  # History lookup can take time
+        
+        if not hasattr(self.movie_state, 'badge_system') or not self.movie_state.badge_system:
+            await interaction.followup.send("❌ Badge system not available - movie history not tracked.", ephemeral=True)
+            return
+        
+        badge_system = self.movie_state.badge_system
+        
+        if user:
+            # Show history for specific user (mimic original implementation)
+            user_watches = [watch for watch in badge_system.watch_history if watch.user_id == user.id]
+            
+            if not user_watches:
+                await interaction.followup.send(f"� No movie history found for {user.display_name}", ephemeral=True)
+                return
+            
+            # Sort by most recent
+            user_watches.sort(key=lambda x: x.start_time, reverse=True)
+            
+            embed = discord.Embed(
+                title=f"� Movie History - {user.display_name}",
+                color=discord.Color.blue()
+            )
+            
+            history_text = ""
+            for i, watch in enumerate(user_watches[:15]):  # Show last 15
+                completion_emoji = "✅" if watch.is_completed else "⏸️"
+                date_str = watch.start_time.strftime("%m/%d")
+                duration = f"{watch.watch_duration_minutes}m" if watch.watch_duration_minutes > 0 else "N/A"
+                
+                history_text += f"{completion_emoji} **{watch.movie_title}** - {date_str} ({duration})\n"
+            
+            embed.description = history_text or "No movies watched yet."
+            
+            # Add stats
+            total_watches = len(user_watches)
+            completed_watches = len([w for w in user_watches if w.is_completed])
+            total_time = sum(w.watch_duration_minutes for w in user_watches)
+            
+            embed.add_field(
+                name="📊 Stats",
+                value=f"**{total_watches}** movies watched\n**{completed_watches}** completed\n**{total_time//60:.0f}h {total_time%60}m** total time",
+                inline=True
+            )
+            
+        else:
+            # Show overall bot history (mimic original implementation)
+            if not badge_system.watch_history:
+                await interaction.followup.send("📚 No movie history available yet.", ephemeral=True)
+                return
+            
+            # Get unique movies sorted by most recent watch
+            movie_watches = {}
+            for watch in badge_system.watch_history:
+                if watch.movie_title not in movie_watches or watch.start_time > movie_watches[watch.movie_title].start_time:
+                    movie_watches[watch.movie_title] = watch
+            
+            recent_movies = sorted(movie_watches.values(), key=lambda x: x.start_time, reverse=True)
+            
+            embed = discord.Embed(
+                title="📚 Recent Movies Played by Bot",
+                description="Movies watched during marathons",
+                color=discord.Color.purple()
+            )
+            
+            history_text = ""
+            for i, watch in enumerate(recent_movies[:20]):  # Show last 20 unique movies
+                date_str = watch.start_time.strftime("%m/%d/%y")
+                year_str = f" ({watch.year})" if watch.year else ""
+                
+                # Count total watchers for this movie
+                watchers = len([w for w in badge_system.watch_history if w.movie_title == watch.movie_title])
+                watcher_text = f" - {watchers} watcher{'s' if watchers != 1 else ''}"
+                
+                history_text += f"**{watch.movie_title}**{year_str} - {date_str}{watcher_text}\n"
+            
+            embed.description = history_text
+            
+            # Add overall stats
+            total_unique_movies = len(movie_watches)
+            total_watch_sessions = len(badge_system.watch_history)
+            
+            embed.add_field(
+                name="📊 Overall Stats",
+                value=f"**{total_unique_movies}** unique movies\n**{total_watch_sessions}** total watch sessions",
+                inline=True
+            )
+        
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="moviestats",
+        description="Show comprehensive movie statistics"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def moviestats(self, interaction: Interaction):
+        """Show comprehensive movie statistics - mimics original !moviestats command."""
+        await interaction.response.defer()  # Stats calculation can take time
+        
+        if not hasattr(self.movie_state, 'badge_system') or not self.movie_state.badge_system:
+            await interaction.followup.send("❌ Badge system not available - movie statistics not tracked.", ephemeral=True)
+            return
+        
+        badge_system = self.movie_state.badge_system
+        
+        if not badge_system.watch_history:
+            await interaction.followup.send("📊 No movie data available yet.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="📊 ClankerTV Movie Statistics",
+            color=discord.Color.gold()
+        )
+        
+        # Limit data processing to prevent freezing - only process last 1000 watches (same as original)
+        watch_data = badge_system.watch_history[-1000:] if len(badge_system.watch_history) > 1000 else badge_system.watch_history
+        
+        # Basic stats (same calculation as original)
+        total_watches = len(watch_data)
+        
+        # Build all stats in one pass to ensure consistency (same as original)
+        unique_plays = set()
+        unique_movies = set()
+        unique_watchers = set()
+        movie_play_counts = {}
+        genre_counts = {}
+        year_counts = {}
+        
+        completed_watches = 0
+        total_minutes = 0
+        
+        for watch in watch_data:
+            # Track basic stats
+            unique_movies.add(watch.movie_title)
+            unique_watchers.add(watch.user_id)
+            
+            if watch.is_completed:
+                completed_watches += 1
+            
+            if watch.watch_duration_minutes and watch.watch_duration_minutes > 0:
+                total_minutes += watch.watch_duration_minutes
+            
+            # Group simultaneous watches as one "play"
+            play_key = f"{watch.movie_title}-{watch.start_time.strftime('%Y%m%d%H%M')}"
+            
+            if play_key not in unique_plays:
+                unique_plays.add(play_key)
+                
+                # Count movie plays
+                movie_play_counts[watch.movie_title] = movie_play_counts.get(watch.movie_title, 0) + 1
+                
+                # Count genres (only once per unique play)
+                for genre in watch.genres:
+                    genre_counts[genre] = genre_counts.get(genre, 0) + 1
+                
+                # Count decades (only once per unique play)
+                if watch.year:
+                    decade = (watch.year // 10) * 10
+                    year_counts[f"{decade}s"] = year_counts.get(f"{decade}s", 0) + 1
+        
+        unique_movie_count = len(unique_movies)
+        unique_movie_plays = len(unique_plays)
+        unique_watcher_count = len(unique_watchers)
+        completion_rate = (completed_watches / total_watches * 100) if total_watches > 0 else 0
+        
+        embed.add_field(
+            name="🎬 Movies",
+            value=f"**{unique_movie_count}** unique movies\n**{unique_movie_plays}** times played\n**{total_watches}** total watches\n**{completion_rate:.1f}%** completion rate",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="👥 Users",
+            value=f"**{unique_watcher_count}** unique watchers\n**{total_minutes//60:.0f}h {total_minutes%60}m** total watched",
+            inline=True
+        )
+        
+        # Most watched movie
+        if movie_play_counts:
+            most_watched = max(movie_play_counts.items(), key=lambda x: x[1])
+            embed.add_field(
+                name="🏆 Most Watched",
+                value=f"**{most_watched[0]}**\n({most_watched[1]} times)",
+                inline=True
+            )
+        
+        if genre_counts:
+            top_genres = sorted(genre_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+            genre_text = "\n".join([f"**{genre}**: {count}" for genre, count in top_genres])
+            embed.add_field(
+                name="🎭 Top Genres",
+                value=genre_text,
+                inline=True
+            )
+        
+        # Year breakdown (already calculated in single pass above)
+        if year_counts:
+            top_decades = sorted(year_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+            decade_text = "\n".join([f"**{decade}**: {count}" for decade, count in top_decades])
+            embed.add_field(
+                name="📅 Top Decades",
+                value=decade_text,
+                inline=True
+            )
+        
+        # Recent activity
+        recent_watches = sorted(watch_data, key=lambda x: x.start_time, reverse=True)[:3]
+        if recent_watches:
+            recent_text = ""
+            for watch in recent_watches:
+                date_str = watch.start_time.strftime("%m/%d")
+                recent_text += f"**{watch.movie_title}** - {date_str}\n"
+            
+            embed.add_field(
+                name="📅 Recent Activity",
+                value=recent_text,
+                inline=True
+            )
+        
+        # Add note if data was limited (same as original)
+        if len(badge_system.watch_history) > 1000:
+            embed.set_footer(text=f"Showing stats from last 1000 watches (of {len(badge_system.watch_history)} total)")
+        
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(
+        name="topwatchers",
+        description="Show leaderboard of top movie watchers"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def topwatchers(self, interaction: Interaction):
+        """Show leaderboard of top movie watchers - mimics original !topwatchers command."""
+        await interaction.response.defer()  # Leaderboard calculation can take time
+        
+        if not hasattr(self.movie_state, 'badge_system') or not self.movie_state.badge_system:
+            await interaction.followup.send("❌ Badge system not available - watcher data not tracked.", ephemeral=True)
+            return
+        
+        badge_system = self.movie_state.badge_system
+        
+        if not badge_system.user_stats:
+            await interaction.followup.send("👥 No watcher data available yet.", ephemeral=True)
+            return
+        
+        # Get leaderboard from badge system (same as original)
+        leaderboard = badge_system.get_leaderboard("total_movies", limit=10)
+        
+        if not leaderboard:
+            await interaction.followup.send("� No watcher statistics available yet.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="🏆 Top Movie Watchers",
+            description="Users who have watched the most movies",
+            color=discord.Color.gold()
+        )
+        
+        leaderboard_text = ""
+        for i, (user_stats, rank) in enumerate(leaderboard):
+            # Get user object for display name (same as original)
+            user = self.bot.get_user(user_stats.user_id)
+            username = user.display_name if user else user_stats.username
+            
+            # Medal emojis for top 3 (same as original)
+            if rank == 1:
+                emoji = "🥇"
+            elif rank == 2:
+                emoji = "🥈"  
+            elif rank == 3:
+                emoji = "🥉"
+            else:
+                emoji = f"{rank}."
+            
+            # Stats (same as original)
+            movies = user_stats.total_movies
+            hours = user_stats.total_watch_time_hours
+            completion = user_stats.average_completion_rate
+            
+            leaderboard_text += f"{emoji} **{username}**\n"
+            leaderboard_text += f"    {movies} movies • {hours:.1f}h • {completion:.0f}% completion\n\n"
+        
+        embed.description = leaderboard_text
+        
+        await interaction.followup.send(embed=embed)
+
+
 async def setup(bot: commands.Bot, plex_service: PlexService, ai_service: AIService, movie_state: MovieState, badge_system=None):
     """Setup function to add utility commands to the bot."""
     utility_cog = UtilityCommands(bot, plex_service, ai_service, movie_state, badge_system)
@@ -2007,3 +2479,9 @@ async def setup(bot: commands.Bot, plex_service: PlexService, ai_service: AIServ
     
     # Add the hit list slash command
     await bot.add_cog(HitListSlashCommand(bot, plex_service, utility_cog.hit_list))
+    
+    # Add movie-related slash commands
+    await bot.add_cog(MovieSlashCommands(bot, plex_service, ai_service, movie_state, badge_system))
+    
+    # Add statistics slash commands
+    await bot.add_cog(StatisticsSlashCommands(bot, plex_service, movie_state, badge_system))

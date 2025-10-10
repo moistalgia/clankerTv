@@ -271,31 +271,7 @@ class MovieCommands(commands.Cog):
         embed.description = doot_text
         await ctx.send(embed=embed)
 
-    @commands.command(name="play")
-    @commands.has_permissions(administrator=True)
-    async def play_movie(self, ctx: commands.Context, *, movie_name: str):
-        """Play a specific movie immediately (admin override)."""
-        playlist = self.movie_state.playlist
-        
-        if movie_name not in playlist:
-            await ctx.send(f"❌ **{movie_name}** not found in the Plex horror playlist.")
-            return
-        
-        try:
-            # Play the movie using Plex service
-            result = await self.plex_service.play_movie(movie_name)
-            
-            if result.get('success'):
-                # Clear votes since we're overriding
-                self.movie_state.clear_all_votes()
-                self.movie_state.set_current_movie(movie_name)
-                
-                await ctx.send(f"▶️ Now playing: **{movie_name}** (admin override)")
-            else:
-                await ctx.send(f"❌ Failed to play **{movie_name}**: {result.get('message', 'Unknown error')}")
-                
-        except Exception as e:
-            await ctx.send(f"❌ Error playing movie: {e}")
+
 
     @commands.command(name="listview")
     async def list_view(self, ctx: commands.Context):
@@ -372,7 +348,275 @@ class DootDootSlashCommand(commands.Cog):
         )
 
 
+class PlaySlashCommand(commands.Cog):
+    """Slash command version of play for better UX with autocomplete."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, movie_state: MovieState):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.movie_state = movie_state
+
+    async def movie_autocomplete(self, interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from the playlist."""
+        playlist = self.movie_state.playlist
+        if not playlist:
+            return []
+
+        return [
+            app_commands.Choice(name=movie, value=movie)
+            for movie in playlist
+            if current.lower() in movie.lower()
+        ][:25]  # Discord max 25 choices
+
+    @app_commands.command(
+        name="play",
+        description="Play a specific movie immediately"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to play")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def play(self, interaction: Interaction, movie_name: str):
+        """Slash command for playing movies with autocomplete."""
+        playlist = self.movie_state.playlist
+        
+        if movie_name not in playlist:
+            await interaction.response.send_message(
+                f"❌ **{movie_name}** not found in the Plex horror playlist.",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Play the movie using Plex service
+            result = await self.plex_service.play_movie(movie_name)
+            
+            if result.get('success'):
+                # Clear votes since we're overriding
+                self.movie_state.clear_all_votes()
+                self.movie_state.set_current_movie(movie_name)
+                
+                await interaction.response.send_message(
+                    f"▶️ Now playing: **{movie_name}**"
+                )
+            else:
+                await interaction.response.send_message(
+                    f"❌ Failed to play **{movie_name}**: {result.get('message', 'Unknown error')}",
+                    ephemeral=True
+                )
+                
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Error playing movie: {e}",
+                ephemeral=True
+            )
+
+
+class MovieUtilitySlashCommands(commands.Cog):
+    """Additional movie utility slash commands."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, movie_state: MovieState):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.movie_state = movie_state
+
+    async def movie_autocomplete(self, interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from the playlist."""
+        playlist = self.movie_state.playlist
+        if not playlist:
+            return []
+
+        return [
+            app_commands.Choice(name=movie, value=movie)
+            for movie in playlist
+            if current.lower() in movie.lower()
+        ][:25]  # Discord max 25 choices
+
+    @app_commands.command(
+        name="seed",
+        description="Preload a movie into the dootlist without casting a vote"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to seed into the queue")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def seed(self, interaction: Interaction, movie_name: str):
+        """Seed a movie into the dootlist with autocomplete."""
+        if movie_name not in self.movie_state.playlist:
+            await interaction.response.send_message(f"❌ **{movie_name}** is not in the Plex horror playlist.", ephemeral=True)
+            return
+
+        requests = self.movie_state.requests
+        if movie_name not in requests:
+            requests[movie_name] = []  # empty voter list
+            await interaction.response.send_message(f"📥 Preloaded **{movie_name}** into the dootlist (0 votes).")
+        else:
+            await interaction.response.send_message(f"ℹ️ **{movie_name}** is already in the dootlist.", ephemeral=True)
+
+    @app_commands.command(
+        name="undoot",
+        description="Remove your vote from a movie"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to remove your vote from")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def undoot(self, interaction: Interaction, movie_name: str):
+        """Remove your vote from a movie with autocomplete."""
+        requests = self.movie_state.requests
+        
+        if movie_name not in requests:
+            await interaction.response.send_message(f"❌ **{movie_name}** is not in the current doot list.", ephemeral=True)
+            return
+
+        if interaction.user.id not in requests[movie_name]:
+            await interaction.response.send_message(f"❌ You haven't dooted **{movie_name}**.", ephemeral=True)
+            return
+
+        requests[movie_name].remove(interaction.user.id)
+        
+        # Clean up empty lists
+        if len(requests[movie_name]) == 0:
+            del requests[movie_name]
+            await interaction.response.send_message(f"📤 Removed **{movie_name}** from doot list (no votes remaining).")
+        else:
+            vote_count = len(requests[movie_name])
+            await interaction.response.send_message(f"📤 Removed your doot from **{movie_name}** ({vote_count} votes remaining).")
+
+    @app_commands.command(
+        name="list",
+        description="Browse the horror movie collection with optional search"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(query="Search for specific movies (optional)")
+    async def list_movies(self, interaction: Interaction, query: str = None):
+        """Browse movies with optional search."""
+        await interaction.response.defer()  # List generation can take time
+        
+        try:
+            playlist = self.movie_state.playlist
+            if not playlist:
+                await interaction.followup.send("❌ Movie playlist not loaded.", ephemeral=True)
+                return
+
+            # Filter movies if query provided
+            if query:
+                filtered_movies = [movie for movie in playlist if query.lower() in movie.lower()]
+                if not filtered_movies:
+                    await interaction.followup.send(f"❌ No movies found matching '{query}'", ephemeral=True)
+                    return
+                movies_to_show = filtered_movies
+                title_prefix = f"🔍 Search: '{query}' - "
+            else:
+                movies_to_show = playlist
+                title_prefix = ""
+
+            # Create ListView for browsing
+            from bot.ui.list_view import ListView
+            view = ListView(movies_to_show, MOVIES_PER_PAGE)
+            embed = view.get_page_embed()
+            
+            # Update embed title with our custom title
+            embed.title = f"🎬 {title_prefix}Horror Movie Collection"
+            
+            await interaction.followup.send(embed=embed, view=view)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error loading movie list: {e}", ephemeral=True)
+
+
+class VotingSlashCommands(commands.Cog):
+    """Movie voting slash commands with autocomplete."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, movie_state: MovieState):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.movie_state = movie_state
+
+    async def movie_autocomplete(self, interaction: Interaction, current: str) -> list[app_commands.Choice[str]]:
+        """Autocomplete for movie names from the playlist."""
+        playlist = self.movie_state.playlist
+        if not playlist:
+            return []
+
+        return [
+            app_commands.Choice(name=movie, value=movie)
+            for movie in playlist
+            if current.lower() in movie.lower()
+        ][:25]  # Discord max 25 choices
+
+    @app_commands.command(
+        name="doot",
+        description="Vote for a movie to watch next"
+    )
+    @app_commands.guilds(GUILD_ID)
+    @app_commands.describe(movie_name="Pick a movie to vote for")
+    @app_commands.autocomplete(movie_name=movie_autocomplete)
+    async def doot(self, interaction: Interaction, movie_name: str):
+        """Vote for a movie with autocomplete."""
+        if not movie_name.strip():
+            await interaction.response.send_message("❌ Please provide a movie name to vote for.", ephemeral=True)
+            return
+
+        if movie_name not in self.movie_state.playlist:
+            await interaction.response.send_message(f"❌ '{movie_name}' is not in the current playlist.", ephemeral=True)
+            return
+
+        user_id = interaction.user.id
+        username = interaction.user.display_name
+
+        # Check if user already voted for this movie
+        if movie_name in self.movie_state.votes and user_id in self.movie_state.votes[movie_name]:
+            await interaction.response.send_message(f"❌ You already voted for '{movie_name}'.", ephemeral=True)
+            return
+
+        # Add the vote
+        if movie_name not in self.movie_state.votes:
+            self.movie_state.votes[movie_name] = []
+        
+        self.movie_state.votes[movie_name].append(user_id)
+        vote_count = len(self.movie_state.votes[movie_name])
+
+        await interaction.response.send_message(
+            f"🎬 **{username}** voted for **{movie_name}** ({vote_count} votes)"
+        )
+
+    @app_commands.command(
+        name="dootlist",
+        description="Show current voting results"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def dootlist(self, interaction: Interaction):
+        """Show current voting results."""
+        if not self.movie_state.votes:
+            await interaction.response.send_message("📊 No votes cast yet!", ephemeral=True)
+            return
+
+        # Sort by vote count
+        sorted_votes = sorted(
+            self.movie_state.votes.items(),
+            key=lambda x: len(x[1]),
+            reverse=True
+        )
+
+        embed = discord.Embed(
+            title="📊 Current Voting Results",
+            description="Movies ranked by votes:",
+            color=discord.Color.gold()
+        )
+
+        for movie, voters in sorted_votes[:10]:  # Top 10
+            vote_count = len(voters)
+            embed.add_field(
+                name=f"{movie}",
+                value=f"🗳️ {vote_count} votes",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed)
+
+
 async def setup(bot: commands.Bot, plex_service: PlexService, movie_state: MovieState):
     """Setup function to add movie commands to the bot."""
     await bot.add_cog(MovieCommands(bot, plex_service, movie_state))
     await bot.add_cog(DootDootSlashCommand(bot, movie_state))
+    await bot.add_cog(PlaySlashCommand(bot, plex_service, movie_state))
+    await bot.add_cog(MovieUtilitySlashCommands(bot, plex_service, movie_state))
+    await bot.add_cog(VotingSlashCommands(bot, plex_service, movie_state))

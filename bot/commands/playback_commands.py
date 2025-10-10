@@ -6,8 +6,11 @@ Contains all commands for controlling movie playback via Plex.
 """
 
 import discord
+from discord import app_commands, Interaction
 from discord.ext import commands
 from typing import Optional
+
+from config import GUILD_ID
 
 from services.plex_service import PlexService
 from models.movie_state import MovieState
@@ -107,6 +110,123 @@ class PlaybackCommands(commands.Cog):
             await ctx.send(f"❌ Failed to apply subtitles: {e}")
 
 
+class PlaybackSlashCommands(commands.Cog):
+    """Essential playback slash commands."""
+    
+    def __init__(self, bot: commands.Bot, plex_service: PlexService, movie_state: MovieState):
+        self.bot = bot
+        self.plex_service = plex_service
+        self.movie_state = movie_state
+
+    @app_commands.command(
+        name="timeleft",
+        description="Show remaining time for the currently playing movie"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def timeleft(self, interaction: Interaction):
+        """Show remaining time for the currently playing movie."""
+        try:
+            time_info = await self.plex_service.get_time_remaining()
+            if time_info:
+                await interaction.response.send_message(
+                    f"⏳ Remaining time for **{time_info['title']}**: {time_info['formatted_time']}"
+                )
+            else:
+                await interaction.response.send_message("❌ No movie is currently playing.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to check time: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="nowplaying",
+        description="Show what movie is currently playing"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def nowplaying(self, interaction: Interaction):
+        """Show currently playing movie information."""
+        try:
+            current_info = await self.plex_service.get_current_movie_info()
+            if current_info:
+                embed = discord.Embed(
+                    title="🎬 Now Playing",
+                    description=f"**{current_info['title']}**",
+                    color=discord.Color.green()
+                )
+                
+                if 'progress' in current_info:
+                    embed.add_field(
+                        name="Progress",
+                        value=f"{current_info['progress']}%",
+                        inline=True
+                    )
+                
+                if 'duration' in current_info:
+                    embed.add_field(
+                        name="Duration",
+                        value=current_info['duration'],
+                        inline=True
+                    )
+                
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message("❌ No movie is currently playing.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to get current movie: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="clients",
+        description="Show active Plex clients and their status"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def clients(self, interaction: Interaction):
+        """Show active Plex clients."""
+        try:
+            clients = await self.plex_service.get_available_clients()
+            if not clients:
+                await interaction.response.send_message("❌ No controllable Plex clients found! Make sure Plex is running.", ephemeral=True)
+                return
+
+            message = "**Controllable Plex Clients:**\n"
+            for client in clients:
+                message += f"- {client['title']} ({client['platform']})\n"
+
+            await interaction.response.send_message(message)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to get clients: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="restart",
+        description="Restart the currently playing movie from the beginning"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def restart(self, interaction: Interaction):
+        """Restart the currently playing movie."""
+        try:
+            result = await self.plex_service.restart_current_movie()
+            if result:
+                await interaction.response.send_message(f"🔁 Restarted **{result}** from the beginning!")
+            else:
+                await interaction.response.send_message("❌ No movie is currently playing to restart.", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to restart movie: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="subtitles",
+        description="Download and apply subtitles to the currently playing movie"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def subtitles(self, interaction: Interaction):
+        """Download and apply subtitles to the currently playing movie."""
+        try:
+            result = await self.plex_service.apply_subtitles()
+            if result['success']:
+                await interaction.response.send_message(f"✅ Applied subtitle and resumed playback from {result['offset']} seconds.")
+            else:
+                await interaction.response.send_message(f"❌ {result['message']}", ephemeral=True)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Failed to apply subtitles: {e}", ephemeral=True)
+
+
 async def setup(bot: commands.Bot, plex_service: PlexService, movie_state: MovieState):
     """Setup function to add playback commands to the bot."""
     await bot.add_cog(PlaybackCommands(bot, plex_service, movie_state))
+    await bot.add_cog(PlaybackSlashCommands(bot, plex_service, movie_state))

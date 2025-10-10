@@ -7,9 +7,12 @@ and attempt to restore his sanity through various methods.
 """
 
 import discord
+from discord import app_commands, Interaction
 from discord.ext import commands
 import asyncio
 from typing import Optional
+
+from config import GUILD_ID
 
 
 class RecoveryCommands(commands.Cog):
@@ -246,6 +249,138 @@ class RecoveryCommands(commands.Cog):
                 await message.channel.send(result)
 
 
+class RecoverySlashCommands(commands.Cog):
+    """Recovery and corruption slash commands."""
+    
+    def __init__(self, bot):
+        self.bot = bot
+        self.corruption_system = None
+        self.recovery_games = None
+    
+    def set_corruption_system(self, corruption_system):
+        """Set the corruption system instance."""
+        self.corruption_system = corruption_system
+        from models.recovery_games import RecoveryMinigames
+        self.recovery_games = RecoveryMinigames(corruption_system)
+
+    @app_commands.command(
+        name="status",
+        description="Check Clanker's current corruption and sanity levels"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def status(self, interaction: Interaction):
+        """Check Clanker's corruption status."""
+        if not self.corruption_system:
+            await interaction.response.send_message("❌ Corruption system not initialized.", ephemeral=True)
+            return
+
+        try:
+            corruption_level = self.corruption_system.calculate_corruption_level()
+            sanity_level = 100 - corruption_level
+            
+            # Determine status message based on corruption level
+            if corruption_level <= 20:
+                status_msg = "🟢 **STABLE** - All systems operational"
+                color = discord.Color.green()
+            elif corruption_level <= 40:
+                status_msg = "🟡 **MINOR GLITCHES** - Experiencing slight anomalies"
+                color = discord.Color.gold()
+            elif corruption_level <= 60:
+                status_msg = "🟠 **DEGRADED** - Significant corruption detected"
+                color = discord.Color.orange()
+            elif corruption_level <= 80:
+                status_msg = "🔴 **CRITICAL** - Major system instability"
+                color = discord.Color.red()
+            else:
+                status_msg = "💀 **COMPLETE BREAKDOWN** - Total system failure imminent"
+                color = discord.Color.dark_red()
+
+            embed = discord.Embed(
+                title="🤖 Clanker System Status",
+                description=status_msg,
+                color=color
+            )
+
+            # Status bars
+            corruption_bar = "█" * (corruption_level // 10) + "░" * (10 - corruption_level // 10)
+            sanity_bar = "█" * (sanity_level // 10) + "░" * (10 - sanity_level // 10)
+
+            embed.add_field(
+                name="💥 Corruption Level",
+                value=f"`{corruption_bar}` {corruption_level}%",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🧠 Sanity Level", 
+                value=f"`{sanity_bar}` {sanity_level}%",
+                inline=False
+            )
+
+            # Additional corruption info  
+            stage = self.corruption_system.get_corruption_stage()
+            embed.add_field(
+                name="� System Stage",
+                value=f"**{stage.title()}** corruption detected",
+                inline=False
+            )
+
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error checking status: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="recover",
+        description="Attempt to recover Clanker's sanity through minigames"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def recover(self, interaction: Interaction):
+        """Start a recovery minigame."""
+        if not self.corruption_system or not self.recovery_games:
+            await interaction.response.send_message("❌ Recovery system not initialized.", ephemeral=True)
+            return
+
+        try:
+            # Use the same method as the original !recover command
+            # Create a fake context for compatibility with the existing recovery system
+            class FakeContext:
+                def __init__(self, interaction):
+                    self.author = interaction.user
+                    self.send = interaction.response.send_message
+                    
+            fake_ctx = FakeContext(interaction)
+            await self.recovery_games.start_recovery_game(fake_ctx)
+            
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Error starting recovery: {e}", ephemeral=True)
+
+    @app_commands.command(
+        name="diagnostics",
+        description="Run system diagnostics on Clanker"
+    )
+    @app_commands.guilds(GUILD_ID)
+    async def diagnostics(self, interaction: Interaction):
+        """Run system diagnostics."""
+        if not self.corruption_system:
+            await interaction.response.send_message("❌ Diagnostic system offline.", ephemeral=True)
+            return
+        
+        try:
+            # Get full diagnostic report (same as original !diagnostics)
+            report = self.corruption_system.get_diagnostic_report()
+            
+            # Format as embed for better presentation (same as original)
+            embed = discord.Embed(title="🔍 System Diagnostic Report", color=discord.Color.blue())
+            embed.description = f"```\n{report}\n```"
+            
+            await interaction.response.send_message(embed=embed)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Diagnostics failed: {e}", ephemeral=True)
+
+
 async def setup(bot):
     """Setup function for the cog."""
     await bot.add_cog(RecoveryCommands(bot))
+    await bot.add_cog(RecoverySlashCommands(bot))
